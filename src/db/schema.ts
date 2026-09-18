@@ -16,9 +16,19 @@ import {
  * Owned by this project from day one — no legacy schema to reconcile
  * against. Auth lives in Supabase's own `auth.users` table (native Supabase
  * Auth); `profiles` holds only the app-specific fields (role, is_active)
- * keyed to `auth.users.id`, with RLS policies written against `auth.uid()`
- * as the real authorization boundary (never bypassed via a default
- * service-role client).
+ * keyed to `auth.users.id`.
+ *
+ * Authorization note: Drizzle here connects via DATABASE_URL (a direct
+ * Postgres connection), which runs with a privileged role and BYPASSES
+ * RLS — same as the Supabase service-role client would. Every route that
+ * queries through `db` (this file's tables) is responsible for its own
+ * authorization check in application code (see src/lib/auth/requireAdmin.ts
+ * and the explicit `eq(profiles.id, user.id)`-style scoping used
+ * throughout) — RLS is NOT enforcing anything on that path. RLS policies
+ * (see supabase/rls-policies.sql) still matter as defense-in-depth for any
+ * access that goes through Supabase's anon-key client directly (e.g.
+ * client-side Realtime subscriptions, planned for Phase 7) — just not for
+ * Drizzle queries.
  */
 
 export const roleEnum = pgEnum('role', ['admin', 'employee']);
@@ -157,6 +167,59 @@ export const auditLogs = pgTable('audit_logs', {
   ipAddress: varchar('ip_address', { length: 64 }),
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// --- Phase 2 (Onboarding) ---
+export const employmentTypeEnum = pgEnum('employment_type', ['w2', '1099']);
+export const onboardingSessionStatusEnum = pgEnum('onboarding_session_status', [
+  'draft',
+  'sent',
+  'in_progress',
+  'completed',
+  'cancelled',
+]);
+export const onboardingDocumentStatusEnum = pgEnum('onboarding_document_status', [
+  'pending_generation',
+  'generated',
+  'sent_for_signature',
+  'signed',
+  'failed',
+]);
+
+export const onboardingSessions = pgTable('onboarding_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  employmentType: employmentTypeEnum('employment_type').notNull(),
+  status: onboardingSessionStatusEnum('status').notNull().default('draft'),
+  // Free-form intake data (name, dates, CPT/OPT/SEVIS fields, etc.) used to
+  // fill generated documents. Kept as JSONB since the field set varies by
+  // employment type and grows over time; not duplicated into structured
+  // columns the way the legacy app did (that caused drift between the two).
+  formData: jsonb('form_data').default({}),
+  createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const onboardingDocuments = pgTable('onboarding_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  sessionId: uuid('session_id')
+    .notNull()
+    .references(() => onboardingSessions.id, { onDelete: 'cascade' }),
+  documentType: varchar('document_type', { length: 100 }).notNull(),
+  status: onboardingDocumentStatusEnum('status').notNull().default('pending_generation'),
+  // Path within the `onboarding-documents` Supabase Storage bucket.
+  generatedFilePath: text('generated_file_path'),
+  signatureProvider: varchar('signature_provider', { length: 50 }), // 'dropbox_sign' | 'docusign'
+  signatureRequestId: varchar('signature_request_id', { length: 255 }),
+  signedFilePath: text('signed_file_path'),
+  signedAt: timestamp('signed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 // --- Net-new for Phase 3 (I-9 / E-Verify) — schema stub only, not yet wired

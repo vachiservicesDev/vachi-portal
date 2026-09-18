@@ -19,12 +19,12 @@ Every feature below is in scope for this project. ✅ = built and working
 today, 🚧 = not yet built.
 
 **Identity & access**
-- ✅ Supabase Auth (admin/employee roles), RLS as the real authorization boundary
+- ✅ Supabase Auth (admin/employee roles); authorization enforced in application code (`src/lib/auth/requireAdmin.ts` + explicit per-user scoping) since data access goes through Drizzle, not RLS — see "Architecture" below
 - 🚧 SSO/MFA for admin accounts
 - 🚧 Legacy-account one-time migration path (N/A — no legacy data here; will matter only if data is ever imported from the old system)
 
 **Onboarding**
-- 🚧 Employee onboarding workflow: document generation (W-2/1099 and similar), e-signature (DocuSign or Dropbox Sign — sandbox for dev), document storage in Supabase Storage
+- ✅ Employee onboarding workflow: PDF document generation, e-signature via Dropbox Sign (sandbox), document storage in Supabase Storage. Vendor is swappable (DocuSign not yet chosen over Dropbox Sign — see docs/PLAN.md) and only one document type exists so far (a generic onboarding acknowledgment) — real forms (I-9 itself, offer letters, etc.) are added as more PDF generators following the same pattern.
 
 **I-9 / E-Verify compliance**
 - 🚧 Digital Form I-9 Sections 1–3, employer 3-business-day SLA tracking
@@ -63,8 +63,9 @@ today, 🚧 = not yet built.
 ## Architecture
 
 - **Next.js 14** (App Router), TypeScript, Tailwind — one deploy unit (Vercel), no separate frontend/backend split.
-- **Supabase**: Postgres + native Auth (RLS enforced, not bypassed) + Storage + Realtime. One project, free tier for dev.
+- **Supabase**: Postgres + native Auth + Storage + Realtime. One project, free tier for dev.
 - **Drizzle ORM** — schema lives in `src/db/schema.ts`, migrations generated from it (this repo has no legacy schema drift to reconcile — it owns the schema from day one).
+- **Authorization model** (read this before adding a route): Drizzle connects via `DATABASE_URL`, a direct Postgres connection that runs with a privileged role and **bypasses RLS** — the same way the legacy app's service-role client did. Since almost all data access in this app goes through Drizzle, RLS is not the enforcement mechanism here; every route is responsible for checking who's calling it itself, via `src/lib/auth/requireAdmin.ts` for admin-only routes and explicit `WHERE`-clause scoping (e.g. matching `profiles.id` to the caller) for self-service routes. RLS policies (`supabase/rls-policies.sql`) are still applied as defense-in-depth for the few paths that *do* go through Supabase's anon-key client directly — currently just `auth.getUser()`, growing to include client-side Realtime subscriptions in Phase 7.
 - **Cron**: Vercel Cron for scheduled compliance checks (no always-on server needed).
 - Vendor integrations (payroll, e-signature, E-Verify, Claude) are added behind their own modules as each phase is built, always sandbox-first — see `.env.example`.
 
@@ -74,8 +75,17 @@ today, 🚧 = not yet built.
 npm install
 cp .env.example .env.local   # fill in your own free Supabase project's values
 npm run db:push
+# In the Supabase SQL editor, run supabase/rls-policies.sql (defense-in-depth;
+# see "Architecture" above for what it does and doesn't protect)
+# In the Supabase dashboard: Storage -> New bucket -> name it
+# "onboarding-documents" -> leave it PRIVATE (do not check "Public bucket")
 npm run dev
 ```
+
+To test the onboarding e-signature flow end to end, Dropbox Sign needs to
+reach your app over the internet to deliver the webhook — run
+`npx ngrok http 3000` (free) and set `NEXT_PUBLIC_APP_URL` to the ngrok
+https URL.
 
 What's free/sandbox for local dev:
 - **Supabase**: free project tier (Auth + Postgres + Storage + Realtime all included)
@@ -87,9 +97,16 @@ What's free/sandbox for local dev:
 
 ## Status
 
-Phase 1 (auth + DB foundation) is complete and working: `/login` signs in via
-Supabase Auth, `/dashboard` is middleware-protected and reads the caller's
-own profile through Drizzle. Everything else in the scope list above is
-being built next, in this order: onboarding → I-9/E-Verify → training →
-payroll + timesheets → immigration/compliance modules → messaging + admin
-reporting. This section is updated as each phase ships.
+- **Phase 1 (auth + DB foundation)**: done. `/login` signs in via Supabase
+  Auth, `/dashboard` is middleware-protected, reads the caller's own
+  profile through Drizzle, and signs out a deactivated account.
+- **Phase 2 (onboarding)**: done for one document type. Admin creates a
+  session (`/admin/onboarding`), generates a PDF, sends it for signature via
+  Dropbox Sign sandbox; the employee sees status at `/onboarding`; a webhook
+  marks it signed and stores the final signed PDF in Storage. Not yet
+  verified against a live Dropbox Sign account from this environment (no
+  outbound network access here) — run one real sandbox request before
+  trusting the webhook/signature-verification code path in production.
+- **Remaining**, in order: I-9/E-Verify → training → payroll + timesheets →
+  immigration/compliance modules → messaging + admin reporting. This
+  section is updated as each phase ships.

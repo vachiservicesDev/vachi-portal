@@ -3,13 +3,17 @@ import { cookies } from 'next/headers';
 
 /**
  * Server-side Supabase client for use in Server Components, Route Handlers,
- * and Server Actions — uses the anon key + the caller's session cookie, so
- * RLS is enforced as the real authorization boundary (not bypassed the way
- * the legacy backend's service-role client does everywhere).
+ * and Server Actions — uses the anon key + the caller's session cookie.
+ * Used here mainly for `auth.getUser()`. If this client's `.from(...)` is
+ * ever used for a data query, that query IS RLS-enforced — but most data
+ * access in this app goes through Drizzle (src/db) instead, which connects
+ * via a direct Postgres connection and does NOT go through RLS; see the
+ * authorization note at the top of src/db/schema.ts before assuming a
+ * Drizzle-backed route is RLS-protected.
  *
- * The service-role key (full RLS bypass) should only ever be used in a
- * narrow, explicitly-reviewed set of server-only admin operations — not as
- * the default client, which was the legacy app's mistake.
+ * The service-role key (full RLS bypass, src/lib/supabase/admin.ts) should
+ * only ever be used in a narrow, explicitly-reviewed set of server-only
+ * admin operations.
  */
 export async function createClient() {
   const cookieStore = await cookies();

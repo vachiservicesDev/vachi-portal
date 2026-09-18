@@ -34,10 +34,15 @@ half-built everywhere at once.
 
 ## Build order
 
-1. **Foundation** — ✅ done. Next.js 14 + Supabase Auth/RLS + Drizzle schema
-   + one working login → protected-dashboard vertical slice.
-2. **Onboarding** — document generation, e-signature vendor integration
-   (sandbox), Supabase Storage for templates/generated documents.
+1. **Foundation** — ✅ done. Next.js 14 + Supabase Auth + Drizzle schema +
+   one working login → protected-dashboard vertical slice. (Correction from
+   the original plan: authorization is enforced in application code, not
+   RLS, since Drizzle bypasses RLS — see README.md "Architecture".)
+2. **Onboarding** — ✅ done for one document type (generic acknowledgment
+   PDF). Admin creates session → generates PDF → sends via Dropbox Sign
+   sandbox → webhook marks signed + stores final PDF in Storage. Real forms
+   (I-9, offer letters, etc.) and the DocuSign-vs-Dropbox-Sign vendor
+   decision are still open.
 3. **I-9 / E-Verify module** — digital I-9 Sections 1–3, E-Verify sandbox
    integration, TNC workflow, retention-rule engine, audit export.
 4. **Training** — one consolidated system: task assignment, completion
