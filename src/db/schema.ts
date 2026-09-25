@@ -445,3 +445,86 @@ export const payStubs = pgTable('pay_stubs', {
   filePath: text('file_path'), // optional PDF in the payroll-documents bucket - upload not yet wired up
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// --- Phase 6 (Immigration & compliance modules). The immigration-tracker
+// "dashboard" itself isn't a new table - it's a view over employees +
+// documents (visa_expiry_date, document expiry) already in the schema.
+// What's net-new here is the deeper case-management data the legacy app
+// never had at all.
+
+export const stemOptStatusEnum = pgEnum('stem_opt_status', [
+  'active',
+  'evaluation_due',
+  'completed',
+  'terminated',
+]);
+
+// STEM OPT I-983 Training Plan - required for the 24-month STEM extension.
+// USCIS requires self-evaluations at the 12-month mark and a final
+// evaluation at completion; this tracks those two dates explicitly rather
+// than deriving them ad hoc, the same reasoning as i9Records.section2DueAt.
+export const stemOptTrainingPlans = pgTable('stem_opt_training_plans', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .unique()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  employerName: varchar('employer_name', { length: 255 }).notNull(),
+  i983SubmittedAt: date('i983_submitted_at'),
+  trainingStartDate: date('training_start_date'),
+  trainingEndDate: date('training_end_date'), // up to 24 months after start
+  selfEvaluationDueAt: date('self_evaluation_due_at'), // 12-month mark
+  selfEvaluationCompletedAt: timestamp('self_evaluation_completed_at', { withTimezone: true }),
+  finalEvaluationDueAt: date('final_evaluation_due_at'), // at trainingEndDate
+  finalEvaluationCompletedAt: timestamp('final_evaluation_completed_at', { withTimezone: true }),
+  status: stemOptStatusEnum('status').notNull().default('active'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// H-1B Public Access File - required for every H-1B petition. The LCA
+// (Labor Condition Application) must be posted for 10 consecutive business
+// days before filing; postingStartDate/EndDate track that, separate from
+// lcaFilingDate itself.
+export const h1bPublicAccessFiles = pgTable('h1b_public_access_files', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  lcaCaseNumber: varchar('lca_case_number', { length: 100 }).notNull(),
+  lcaFilingDate: date('lca_filing_date').notNull(),
+  worksite: text('worksite').notNull(),
+  wageLevel: varchar('wage_level', { length: 10 }), // I-IV per DOL prevailing wage levels
+  prevailingWage: decimal('prevailing_wage', { precision: 10, scale: 2 }),
+  actualWage: decimal('actual_wage', { precision: 10, scale: 2 }),
+  postingStartDate: date('posting_start_date'),
+  postingEndDate: date('posting_end_date'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const greenCardStageEnum = pgEnum('green_card_stage', [
+  'perm_prep',
+  'perm_filed',
+  'perm_certified',
+  'i140_filed',
+  'i140_approved',
+  'i485_filed',
+  'i485_approved',
+  'denied',
+]);
+
+export const greenCardCases = pgTable('green_card_cases', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .unique()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  stage: greenCardStageEnum('stage').notNull().default('perm_prep'),
+  priorityDate: date('priority_date'),
+  stageUpdatedAt: timestamp('stage_updated_at', { withTimezone: true }).defaultNow().notNull(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});

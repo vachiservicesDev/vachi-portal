@@ -62,8 +62,13 @@ half-built everywhere at once.
    `payStubs`, provider field defaults to `'manual'`) since the vendor
    decision is still open — same provider-agnostic pattern as
    `src/lib/everify`, ready for a real Gusto/Check/ADP adapter once chosen.
-6. **Immigration & compliance modules** — visa/document expiry tracking,
-   STEM OPT I-983 tracking, H-1B PAF management, green card pipeline.
+6. **Immigration & compliance modules** — ✅ done. Visa expiry dashboard
+   (urgency-bucketed, reads `employees.visa_expiry_date`), STEM OPT I-983
+   tracking with computed 12-month/final evaluation due dates, H-1B PAF
+   management (admin-only, it's a public-disclosure record not personal
+   data), green card sponsorship stage tracking. Still open: automated
+   alerts (today it's a dashboard someone has to check) and joining
+   document-level expiry in once that feature has data.
 7. **Messaging/notifications (Supabase Realtime) + admin dashboards,
    reporting, audit-log UI.**
 8. **AI features** (can start once there's real data to work with, likely

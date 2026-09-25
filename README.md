@@ -34,10 +34,10 @@ today, 🚧 = not yet built.
 - Note: E-Verify itself has no cost to employers, but a live API integration requires enrolling as a DHS E-Verify employer (and employer agent, if running E-Verify on behalf of clients) first — a business/legal step, not a code dependency.
 
 **Immigration & visa compliance**
-- 🚧 Visa/document expiry tracking (OPT, STEM OPT, H1B, L1, O1, TN, E3) with 90/60/30-day alerts
-- 🚧 STEM OPT I-983 Training Plan tracking (12-month evaluations, self-assessments)
-- 🚧 H-1B Public Access File (PAF) management (LCA postings, wage data)
-- 🚧 Green card sponsorship pipeline (PERM → I-140 → I-485 / priority date tracking)
+- ✅ Visa expiry dashboard (`/admin/immigration`) — sorted by urgency (expired/critical ≤30d/warning ≤60d/ok), reads `employees.visa_expiry_date`. 🚧 No automated alerts yet (a scheduled scan is planned alongside Phase 7's notifications), and document-level expiry (the `documents` table) isn't joined in since that feature has no real data flowing through it yet
+- ✅ STEM OPT I-983 Training Plan tracking (`/admin/stem-opt`, employee view at `/stem-opt`) — 12-month self-evaluation and final-evaluation due dates computed from the training start/end dates, admin marks each complete
+- ✅ H-1B Public Access File (PAF) management (`/admin/paf`) — LCA case number, worksite, wage level/prevailing/actual wage, posting period. Admin/compliance-only, not employee-visible (it's a public-disclosure record, not personal data)
+- ✅ Green card sponsorship pipeline (`/admin/green-card`, employee view at `/green-card`) — stage tracking through PERM → I-140 → I-485, priority date
 
 **Training**
 - ✅ One consolidated training system: task creation/assignment (`/admin/training`), employee completion tracking with comments (`/training`), weekly summaries (`/training/summaries`, admin review at `/admin/training/summaries`), performance reviews with employee acknowledgment (`/admin/reviews`, `/reviews`) — no legacy/v2 split this time, one design from the start
@@ -125,5 +125,9 @@ What's free/sandbox for local dev:
   (`/admin/timesheets`). Payroll is manual-entry (no provider chosen yet):
   admin records pay runs and stubs (`/admin/payroll`), employees view theirs
   (`/payroll`).
-- **Remaining**, in order: immigration/compliance modules → messaging +
-  admin reporting. This section is updated as each phase ships.
+- **Phase 6 (Immigration & compliance modules)**: done. Visa expiry
+  dashboard, STEM OPT I-983 tracking, H-1B PAF management, and green card
+  sponsorship pipeline are all live. Automated expiry alerts (vs. the
+  admin having to check the dashboard) are still open.
+- **Remaining**: messaging + admin reporting/audit-log UI. This section is
+  updated as each phase ships.

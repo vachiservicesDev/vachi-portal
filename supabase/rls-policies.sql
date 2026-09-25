@@ -27,6 +27,9 @@ alter table timesheets enable row level security;
 alter table timesheet_entries enable row level security;
 alter table pay_runs enable row level security;
 alter table pay_stubs enable row level security;
+alter table stem_opt_training_plans enable row level security;
+alter table h1b_public_access_files enable row level security;
+alter table green_card_cases enable row level security;
 
 -- profiles: a user can see their own row; admins can see all.
 create policy "profiles_select_own" on profiles
@@ -184,6 +187,31 @@ create policy "pay_stubs_all_admin" on pay_stubs
     exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
   );
 create policy "pay_stubs_select_own" on pay_stubs
+  for select using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+create policy "stem_opt_all_admin" on stem_opt_training_plans
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "stem_opt_select_own" on stem_opt_training_plans
+  for select using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+-- h1b_public_access_files: admin/compliance-only - not personal employee
+-- data the employee self-service side needs to read.
+create policy "paf_all_admin" on h1b_public_access_files
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+
+create policy "green_card_all_admin" on green_card_cases
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "green_card_select_own" on green_card_cases
   for select using (
     employee_id in (select id from employees where user_id = auth.uid())
   );
