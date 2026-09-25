@@ -99,6 +99,32 @@ What's free/sandbox for local dev:
 - **Claude API**: pay-as-you-go, no subscription — a free trial credit covers dev-scale usage
 - **E-Verify**: no cost. Case tracking works today with no enrollment needed since case creation is manual-entry, not a live API call (see "Full functionality scope" above)
 
+## Running the test suite
+
+```bash
+npm install
+# A dedicated local Postgres database, separate from your dev Supabase DB.
+# Its name MUST contain "test" - src/test/setup.ts refuses to run otherwise
+# (the suite TRUNCATEs every app table between tests).
+createdb vachi_test
+DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/vachi_test" npm run db:push
+DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/vachi_test" npm test
+```
+
+50 tests across 9 files cover every phase's admin and employee scenarios
+against a real Postgres database via the real Drizzle queries - not
+against a live Supabase project (Supabase Auth, Storage, and Dropbox Sign
+are mocked in `src/test/setup.ts`, since those need real network access
+this suite doesn't assume). What's verified: authorization boundaries
+(admin-only routes, "your own records only" scoping) on every module,
+business logic (3-business-day I-9 due dates, timesheet hour totals
+computed server-side not trusted from the client, STEM OPT evaluation due
+dates, visa-expiry urgency bucketing, retention-date math), the onboarding
+e-signature webhook's HMAC verification (including that a forged event is
+correctly ignored), and PDF generation. Not covered: anything requiring a
+real browser, real Supabase Auth session, or real third-party API call -
+see the README's closing section for what that leaves open.
+
 ## Status
 
 - **Phase 1 (auth + DB foundation)**: done. `/login` signs in via Supabase
@@ -156,12 +182,19 @@ Concretely still open, in one place rather than scattered per-phase above:
 - **AI features**: none built. Document intelligence, the compliance
   assistant, and risk-surfacing scans are all still just the plan in
   docs/PLAN.md.
-- **Testing**: no automated tests exist. Given the compliance stakes (I-9,
-  payroll, e-signature), this is the highest-leverage next investment
-  before any of this handles real employee data.
-- **Not yet run against a live Supabase project**: everything here was
-  built and build-verified (`npm run build` succeeds, `tsc --noEmit` is
-  clean) in an environment with no outbound network access, so nothing has
-  been exercised against a real database, a real Dropbox Sign sandbox
-  request, or a real Realtime subscription. Do that verification pass
-  before trusting this in front of real users - see "Running this locally."
+- **Testing**: 50 tests now cover every module's admin/employee
+  authorization boundaries and core business logic against a real local
+  Postgres database (see "Running the test suite") - a real gap closed,
+  not just a plan. Still missing: browser/E2E tests (no real Supabase Auth
+  session was available to test against - see below), and load/concurrency
+  testing.
+- **Not yet run against a live Supabase project or in a browser**: the
+  schema, RLS policies, and application logic have been verified against a
+  real local Postgres database and a real automated test suite (see
+  "Running the test suite") - but not against your actual Supabase project,
+  and not by clicking through the UI in a browser, since this sandbox has
+  no network path to `*.supabase.co` (confirmed: even a host-allowlist
+  change wouldn't fix it - direct Postgres connections are categorically
+  unsupported through this sandbox's egress proxy, HTTPS-only). Run
+  `npm run dev` against your real Supabase project and click through both
+  an admin and an employee account before trusting this with real data.
