@@ -23,6 +23,10 @@ alter table training_assignments enable row level security;
 alter table training_comments enable row level security;
 alter table weekly_training_summaries enable row level security;
 alter table performance_reviews enable row level security;
+alter table timesheets enable row level security;
+alter table timesheet_entries enable row level security;
+alter table pay_runs enable row level security;
+alter table pay_stubs enable row level security;
 
 -- profiles: a user can see their own row; admins can see all.
 create policy "profiles_select_own" on profiles
@@ -142,6 +146,44 @@ create policy "performance_reviews_all_admin" on performance_reviews
     exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
   );
 create policy "performance_reviews_select_own" on performance_reviews
+  for select using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+create policy "timesheets_all_admin" on timesheets
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "timesheets_own" on timesheets
+  for all using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+create policy "timesheet_entries_all_admin" on timesheet_entries
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "timesheet_entries_own" on timesheet_entries
+  for all using (
+    timesheet_id in (
+      select t.id from timesheets t
+      join employees e on e.id = t.employee_id
+      where e.user_id = auth.uid()
+    )
+  );
+
+-- pay_runs / pay_stubs: financial data - admin-managed, employees can only
+-- read their own stub rows, never the run itself.
+create policy "pay_runs_all_admin" on pay_runs
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+
+create policy "pay_stubs_all_admin" on pay_stubs
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "pay_stubs_select_own" on pay_stubs
   for select using (
     employee_id in (select id from employees where user_id = auth.uid())
   );

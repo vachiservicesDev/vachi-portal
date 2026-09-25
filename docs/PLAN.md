@@ -57,7 +57,11 @@ half-built everywhere at once.
    split to reconcile this time. Still open: real file-upload materials
    (tasks currently just link out via `contentUrl`) and automatic quiz
    scoring.
-5. **Payroll provider (sandbox) + timesheets.**
+5. **Payroll + timesheets** — ✅ done. Timesheet submission/approval is
+   fully live. Payroll is manual-entry (`src/db/schema.ts`'s `payRuns`/
+   `payStubs`, provider field defaults to `'manual'`) since the vendor
+   decision is still open — same provider-agnostic pattern as
+   `src/lib/everify`, ready for a real Gusto/Check/ADP adapter once chosen.
 6. **Immigration & compliance modules** — visa/document expiry tracking,
    STEM OPT I-983 tracking, H-1B PAF management, green card pipeline.
 7. **Messaging/notifications (Supabase Realtime) + admin dashboards,

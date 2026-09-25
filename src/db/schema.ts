@@ -114,7 +114,9 @@ export const documents = pgTable('documents', {
 
 export const timesheets = pgTable('timesheets', {
   id: uuid('id').defaultRandom().primaryKey(),
-  employeeId: uuid('employee_id').references(() => employees.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
   weekStarting: date('week_starting').notNull(),
   weekEnding: date('week_ending').notNull(),
   totalHours: decimal('total_hours', { precision: 5, scale: 2 }).notNull().default('0'),
@@ -130,7 +132,9 @@ export const timesheets = pgTable('timesheets', {
 
 export const timesheetEntries = pgTable('timesheet_entries', {
   id: uuid('id').defaultRandom().primaryKey(),
-  timesheetId: uuid('timesheet_id').references(() => timesheets.id, { onDelete: 'cascade' }),
+  timesheetId: uuid('timesheet_id')
+    .notNull()
+    .references(() => timesheets.id, { onDelete: 'cascade' }),
   date: date('date').notNull(),
   hours: decimal('hours', { precision: 4, scale: 2 }).notNull().default('0'),
   projectCode: varchar('project_code', { length: 50 }),
@@ -405,4 +409,39 @@ export const performanceReviews = pgTable('performance_reviews', {
   employeeAcknowledgedAt: timestamp('employee_acknowledged_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// --- Phase 5 (Payroll). Vendor (Gusto/Check/ADP) is still an open decision
+// (docs/PLAN.md) - rather than guess, this is a provider-agnostic pay-run
+// record that works today via manual entry (an admin runs payroll through
+// whatever they currently use and records the results here) and is ready
+// for a real provider adapter to populate it automatically later, the same
+// pattern as src/lib/everify.
+export const payRunStatusEnum = pgEnum('pay_run_status', ['draft', 'processed']);
+
+export const payRuns = pgTable('pay_runs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  payPeriodStart: date('pay_period_start').notNull(),
+  payPeriodEnd: date('pay_period_end').notNull(),
+  payDate: date('pay_date').notNull(),
+  status: payRunStatusEnum('status').notNull().default('draft'),
+  provider: varchar('provider', { length: 50 }).notNull().default('manual'), // 'manual' | future: 'gusto' | 'check' | 'adp'
+  createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const payStubs = pgTable('pay_stubs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  payRunId: uuid('pay_run_id')
+    .notNull()
+    .references(() => payRuns.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  grossPay: decimal('gross_pay', { precision: 10, scale: 2 }).notNull(),
+  netPay: decimal('net_pay', { precision: 10, scale: 2 }).notNull(),
+  deductions: jsonb('deductions').default({}), // { federal_tax, state_tax, fica, benefits, ... }
+  filePath: text('file_path'), // optional PDF in the payroll-documents bucket - upload not yet wired up
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });

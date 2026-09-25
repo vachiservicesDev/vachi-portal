@@ -45,8 +45,8 @@ today, 🚧 = not yet built.
 - 🚧 Quiz/assessment scoring (the `score` field exists on assignments but nothing computes it automatically)
 
 **Timesheets & payroll**
-- 🚧 Timesheet submission/approval
-- 🚧 Real payroll processing via a payroll provider (Gusto/Check/ADP — sandbox mode for dev, vendor TBD)
+- ✅ Timesheet submission/approval: employee logs daily entries and submits (`/timesheets`), admin approves/rejects (`/admin/timesheets`)
+- ✅ Payroll — **manual entry, not a live provider integration**: no vendor chosen yet (Gusto/Check/ADP still open, see docs/PLAN.md), so admin records pay runs and pay stubs after running payroll elsewhere (`/admin/payroll`), employees view their stubs (`/payroll`). Swapping in a real provider adapter later follows the same pattern as `src/lib/everify`.
 
 **Communication**
 - 🚧 Messaging between admin and employees
@@ -120,6 +120,10 @@ What's free/sandbox for local dev:
   comments, weekly summaries with admin approve/reject, and performance
   reviews with employee acknowledgment are all live. Real file-upload
   materials and automatic quiz scoring are still open.
-- **Remaining**, in order: payroll + timesheets → immigration/compliance
-  modules → messaging + admin reporting. This section is updated as each
-  phase ships.
+- **Phase 5 (Timesheets & Payroll)**: done. Employee submits weekly
+  timesheets with daily entries (`/timesheets`), admin approves/rejects
+  (`/admin/timesheets`). Payroll is manual-entry (no provider chosen yet):
+  admin records pay runs and stubs (`/admin/payroll`), employees view theirs
+  (`/payroll`).
+- **Remaining**, in order: immigration/compliance modules → messaging +
+  admin reporting. This section is updated as each phase ships.
