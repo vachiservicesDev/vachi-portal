@@ -18,6 +18,11 @@ alter table documents enable row level security;
 alter table onboarding_sessions enable row level security;
 alter table onboarding_documents enable row level security;
 alter table i9_records enable row level security;
+alter table training_tasks enable row level security;
+alter table training_assignments enable row level security;
+alter table training_comments enable row level security;
+alter table weekly_training_summaries enable row level security;
+alter table performance_reviews enable row level security;
 
 -- profiles: a user can see their own row; admins can see all.
 create policy "profiles_select_own" on profiles
@@ -83,6 +88,60 @@ create policy "i9_records_all_admin" on i9_records
     exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
   );
 create policy "i9_records_select_own" on i9_records
+  for select using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+-- training_tasks: the catalog itself is readable by any authenticated
+-- employee (assignment, not visibility, is what's restricted); only admins
+-- manage it.
+create policy "training_tasks_select_all" on training_tasks
+  for select using (auth.uid() is not null);
+create policy "training_tasks_write_admin" on training_tasks
+  for insert with check (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "training_tasks_update_admin" on training_tasks
+  for update using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+
+create policy "training_assignments_all_admin" on training_assignments
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "training_assignments_own" on training_assignments
+  for all using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+create policy "training_comments_all_admin" on training_comments
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "training_comments_own" on training_comments
+  for all using (
+    assignment_id in (
+      select ta.id from training_assignments ta
+      join employees e on e.id = ta.employee_id
+      where e.user_id = auth.uid()
+    )
+  );
+
+create policy "weekly_summaries_all_admin" on weekly_training_summaries
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "weekly_summaries_own" on weekly_training_summaries
+  for all using (
+    employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+create policy "performance_reviews_all_admin" on performance_reviews
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "performance_reviews_select_own" on performance_reviews
   for select using (
     employee_id in (select id from employees where user_id = auth.uid())
   );

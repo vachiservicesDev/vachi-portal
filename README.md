@@ -40,7 +40,9 @@ today, 🚧 = not yet built.
 - 🚧 Green card sponsorship pipeline (PERM → I-140 → I-485 / priority date tracking)
 
 **Training**
-- 🚧 One consolidated training system (task assignment, completion tracking, weekly summaries, performance reviews, materials/comments) — no legacy/v2 split this time, one design from the start
+- ✅ One consolidated training system: task creation/assignment (`/admin/training`), employee completion tracking with comments (`/training`), weekly summaries (`/training/summaries`, admin review at `/admin/training/summaries`), performance reviews with employee acknowledgment (`/admin/reviews`, `/reviews`) — no legacy/v2 split this time, one design from the start
+- 🚧 Real materials upload (a Storage-backed attachments subsystem) — today a task just links out via `contentUrl`
+- 🚧 Quiz/assessment scoring (the `score` field exists on assignments but nothing computes it automatically)
 
 **Timesheets & payroll**
 - 🚧 Timesheet submission/approval
@@ -114,6 +116,10 @@ What's free/sandbox for local dev:
   from `/admin/i9/[id]`. Section 3 reverification due-date is computed but
   has no reminder/action flow yet; TNC workflow and retention-purge
   automation are also still open.
-- **Remaining**, in order: training → payroll + timesheets →
-  immigration/compliance modules → messaging + admin reporting. This
-  section is updated as each phase ships.
+- **Phase 4 (Training)**: done. Task assignment, completion tracking with
+  comments, weekly summaries with admin approve/reject, and performance
+  reviews with employee acknowledgment are all live. Real file-upload
+  materials and automatic quiz scoring are still open.
+- **Remaining**, in order: payroll + timesheets → immigration/compliance
+  modules → messaging + admin reporting. This section is updated as each
+  phase ships.

@@ -51,10 +51,12 @@ half-built everywhere at once.
    reverification reminder/action flow, TNC workflow, retention-purge
    automation (the date is computed but nothing acts on it), ICE/DOL audit
    export bundle.
-4. **Training** — one consolidated system: task assignment, completion
-   tracking, weekly summaries, performance reviews, materials/comments.
-   (No legacy/v2 split to reconcile this time — designed as one system from
-   the start.)
+4. **Training** — ✅ done. One consolidated system: task assignment,
+   completion tracking with comments, weekly summaries (submit/approve/
+   reject), performance reviews (create/submit/acknowledge). No legacy/v2
+   split to reconcile this time. Still open: real file-upload materials
+   (tasks currently just link out via `contentUrl`) and automatic quiz
+   scoring.
 5. **Payroll provider (sandbox) + timesheets.**
 6. **Immigration & compliance modules** — visa/document expiry tracking,
    STEM OPT I-983 tracking, H-1B PAF management, green card pipeline.

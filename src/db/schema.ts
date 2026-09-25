@@ -284,3 +284,125 @@ export const i9Records = pgTable('i9_records', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// --- Phase 4 (Training) — one consolidated system. The legacy app had two
+// competing training implementations (an in-use "legacy" one and an
+// unused, better-architected "v2" one that never got adopted); this is
+// designed as a single system from the start instead of repeating that.
+export const trainingTypeEnum = pgEnum('training_type', [
+  'general',
+  'compliance',
+  'safety',
+  'technical',
+]);
+export const trainingPriorityEnum = pgEnum('training_priority', [
+  'low',
+  'medium',
+  'high',
+  'critical',
+]);
+export const trainingAssignmentStatusEnum = pgEnum('training_assignment_status', [
+  'assigned',
+  'in_progress',
+  'completed',
+  'failed',
+  'expired',
+]);
+export const weeklySummaryStatusEnum = pgEnum('weekly_summary_status', [
+  'draft',
+  'submitted',
+  'approved',
+  'rejected',
+]);
+export const performanceReviewStatusEnum = pgEnum('performance_review_status', [
+  'draft',
+  'submitted',
+  'approved',
+  'rejected',
+]);
+
+export const trainingTasks = pgTable('training_tasks', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description'),
+  type: trainingTypeEnum('type').notNull().default('general'),
+  priority: trainingPriorityEnum('priority').notNull().default('medium'),
+  dueDate: date('due_date'),
+  estimatedDurationMinutes: integer('estimated_duration_minutes'),
+  // Link to the actual training content/materials (a doc, video, slide
+  // deck, etc.) - a full materials-upload subsystem with its own Storage
+  // bucket is still open; this covers "point people at the material" today.
+  contentUrl: text('content_url'),
+  isMandatory: boolean('is_mandatory').default(false),
+  createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const trainingAssignments = pgTable('training_assignments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  taskId: uuid('task_id')
+    .notNull()
+    .references(() => trainingTasks.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  status: trainingAssignmentStatusEnum('status').notNull().default('assigned'),
+  assignedAt: timestamp('assigned_at', { withTimezone: true }).defaultNow().notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  score: integer('score'),
+  timeSpentMinutes: integer('time_spent_minutes').default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const trainingComments = pgTable('training_comments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  assignmentId: uuid('assignment_id')
+    .notNull()
+    .references(() => trainingAssignments.id, { onDelete: 'cascade' }),
+  authorId: uuid('author_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const weeklyTrainingSummaries = pgTable('weekly_training_summaries', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  weekStarting: date('week_starting').notNull(),
+  weekEnding: date('week_ending').notNull(),
+  content: text('content').notNull(),
+  status: weeklySummaryStatusEnum('status').notNull().default('draft'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  reviewedBy: uuid('reviewed_by').references(() => profiles.id, { onDelete: 'set null' }),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewComments: text('review_comments'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const performanceReviews = pgTable('performance_reviews', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  reviewerId: uuid('reviewer_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'set null' }),
+  periodStart: date('period_start').notNull(),
+  periodEnd: date('period_end').notNull(),
+  rating: integer('rating'), // 1-5
+  strengths: text('strengths'),
+  areasForImprovement: text('areas_for_improvement'),
+  goals: text('goals'),
+  status: performanceReviewStatusEnum('status').notNull().default('draft'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+  employeeAcknowledgedAt: timestamp('employee_acknowledged_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
