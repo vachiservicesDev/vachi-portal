@@ -10,6 +10,14 @@ was missing (I-9/E-Verify, real payroll processing, working e-signature,
 STEM OPT/PAF/green-card tracking) — see README.md for the complete
 functionality checklist and what's built vs. pending.
 
+**Infrastructure status**: the real Supabase project (`vrwpkgijaeppraokhiis`)
+is live and fully migrated — schema, RLS policies, covering indexes, and
+both Storage buckets are applied and verified (zero advisory findings). An
+automated test suite (50 tests) covers every phase's business logic
+against a real Postgres database. See README.md, "Running the test suite"
+and the closing section, for exactly what's verified vs. still open (a
+real browser/Auth session hasn't been exercised yet).
+
 Unlike the legacy app, there is no strangler-fig migration here: no live
 system to keep running against, no old code to cut over from. Features are
 still built one at a time, in the order below, each one fully working and

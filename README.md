@@ -79,12 +79,22 @@ today, 🚧 = not yet built.
 npm install
 cp .env.example .env.local   # fill in your own free Supabase project's values
 npm run db:push
-# In the Supabase SQL editor, run supabase/rls-policies.sql (defense-in-depth;
-# see "Architecture" above for what it does and doesn't protect)
-# In the Supabase dashboard: Storage -> New bucket -> create two PRIVATE
-# buckets (do not check "Public bucket"): "onboarding-documents" and "i9-records"
+# In the Supabase SQL editor (or via the Supabase MCP connector's
+# apply_migration), run in order:
+#   1. supabase/rls-policies.sql (defense-in-depth; see "Architecture"
+#      above for what it does and doesn't protect)
+#   2. supabase/indexes.sql (covering indexes for FK columns Drizzle
+#      doesn't index automatically - flagged by Supabase's own performance
+#      advisor)
+#   3. supabase/storage-buckets.sql (creates the two private buckets)
 npm run dev
 ```
+
+The project this was built against (`vrwpkgijaeppraokhiis`) has all three
+applied and verified via the Supabase connector's advisors: 21 tables, RLS
+enabled on every one, zero security or performance warnings (the one
+remaining "unused index" note is expected — no query traffic has hit them
+yet).
 
 To test the onboarding e-signature flow end to end, Dropbox Sign needs to
 reach your app over the internet to deliver the webhook — run
@@ -188,13 +198,19 @@ Concretely still open, in one place rather than scattered per-phase above:
   not just a plan. Still missing: browser/E2E tests (no real Supabase Auth
   session was available to test against - see below), and load/concurrency
   testing.
-- **Not yet run against a live Supabase project or in a browser**: the
-  schema, RLS policies, and application logic have been verified against a
-  real local Postgres database and a real automated test suite (see
-  "Running the test suite") - but not against your actual Supabase project,
-  and not by clicking through the UI in a browser, since this sandbox has
-  no network path to `*.supabase.co` (confirmed: even a host-allowlist
-  change wouldn't fix it - direct Postgres connections are categorically
-  unsupported through this sandbox's egress proxy, HTTPS-only). Run
-  `npm run dev` against your real Supabase project and click through both
-  an admin and an employee account before trusting this with real data.
+- **Schema/RLS/Storage are live on the real project, but nothing has been
+  clicked through in a browser yet.** Once the Supabase connector was
+  attached, the actual `vrwpkgijaeppraokhiis` project got the full schema
+  (21 tables), the RLS policies, covering indexes, and both Storage
+  buckets applied directly - not simulated. Supabase's own advisors
+  confirm zero security findings and zero performance warnings after a
+  follow-up pass (found and fixed: 26 missing FK indexes, 42 RLS policies
+  re-evaluating `auth.uid()` per-row instead of once per statement, one
+  redundant policy). What's still missing is a real browser session: this
+  sandbox has no network path to `*.supabase.co` for plain HTTP (confirmed
+  hard-blocked, not a retry issue), so no one has actually signed up,
+  logged in, or clicked a button yet. Run `npm run dev` against this
+  project and walk through both an admin and an employee account before
+  trusting it with real data - the first admin has to be created by hand
+  (sign up normally, then in the SQL editor: `update profiles set role =
+  'admin' where email = 'you@company.com'`).
