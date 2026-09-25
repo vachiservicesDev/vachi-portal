@@ -17,6 +17,7 @@ alter table employees enable row level security;
 alter table documents enable row level security;
 alter table onboarding_sessions enable row level security;
 alter table onboarding_documents enable row level security;
+alter table i9_records enable row level security;
 
 -- profiles: a user can see their own row; admins can see all.
 create policy "profiles_select_own" on profiles
@@ -73,4 +74,15 @@ create policy "onboarding_documents_select_own" on onboarding_documents
       join employees e on e.id = os.employee_id
       where e.user_id = auth.uid()
     )
+  );
+
+-- i9_records: contains SSN and immigration-status data - treat as
+-- sensitive as documents/onboarding above.
+create policy "i9_records_all_admin" on i9_records
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
+  );
+create policy "i9_records_select_own" on i9_records
+  for select using (
+    employee_id in (select id from employees where user_id = auth.uid())
   );

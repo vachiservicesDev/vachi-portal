@@ -27,3 +27,23 @@ export async function requireAdmin() {
 
   return { ok: true as const, user, profile };
 }
+
+/** Same shape as requireAdmin, but accepts any active signed-in user. */
+export async function requireActiveUser() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false as const, status: 401, message: 'Not signed in' };
+  }
+
+  const [profile] = await db.select().from(profiles).where(eq(profiles.id, user.id)).limit(1);
+
+  if (!profile || !profile.isActive) {
+    return { ok: false as const, status: 403, message: 'Account inactive' };
+  }
+
+  return { ok: true as const, user, profile };
+}

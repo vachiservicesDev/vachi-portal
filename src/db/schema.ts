@@ -222,9 +222,9 @@ export const onboardingDocuments = pgTable('onboarding_documents', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-// --- Net-new for Phase 3 (I-9 / E-Verify) — schema stub only, not yet wired
-// to any route. Section 2 has a hard 3-business-day-from-hire SLA per USCIS,
-// hence `section2DueAt` rather than deriving it ad hoc in application code.
+// --- Phase 3 (I-9 / E-Verify). Section 2 has a hard 3-business-day-from-hire
+// SLA per USCIS, hence `section2DueAt` rather than deriving it ad hoc in
+// application code every time it's displayed.
 export const i9RecordStatusEnum = pgEnum('i9_record_status', [
   'section1_pending',
   'section2_pending',
@@ -249,14 +249,38 @@ export const i9Records = pgTable('i9_records', {
     .unique()
     .references(() => employees.id, { onDelete: 'cascade' }),
   status: i9RecordStatusEnum('status').notNull().default('section1_pending'),
+
+  // Section 1 (employee self-entry): name/DOB/contact plus the citizenship
+  // /immigration-status attestation and its related identifiers. Kept as
+  // JSONB since the required fields branch heavily by attestation type
+  // (citizen vs. permanent resident vs. alien authorized to work) and this
+  // isn't the system of record for identity data (employees table is).
+  section1Data: jsonb('section1_data'),
+  section1SignedByName: varchar('section1_signed_by_name', { length: 200 }),
   section1CompletedAt: timestamp('section1_completed_at', { withTimezone: true }),
-  section2DueAt: date('section2_due_at'), // hire date + 3 business days
+
+  // Section 2 (employer verification, within 3 business days of the start
+  // date entered on Section 1 per USCIS rules).
+  section2DueAt: date('section2_due_at'),
+  section2Data: jsonb('section2_data'), // document list/title/number/expiration examined
+  section2CompletedBy: uuid('section2_completed_by').references(() => profiles.id, {
+    onDelete: 'set null',
+  }),
   section2CompletedAt: timestamp('section2_completed_at', { withTimezone: true }),
-  section3DueAt: date('section3_due_at'), // driven by employees.visa_expiry_date / EAD expiry
+
+  // Section 3 (reverification), driven by employees.visa_expiry_date.
+  section3DueAt: date('section3_due_at'),
   section3CompletedAt: timestamp('section3_completed_at', { withTimezone: true }),
+
   everifyCaseNumber: varchar('everify_case_number', { length: 100 }),
   everifyStatus: everifyCaseStatusEnum('everify_status').notNull().default('not_created'),
-  retentionPurgeEligibleAt: date('retention_purge_eligible_at'), // greater of hire+3yrs / termination+1yr
+  everifySubmittedAt: timestamp('everify_submitted_at', { withTimezone: true }),
+
+  // Greater of (hire date + 3 years) and (termination date + 1 year); null
+  // while still employed, since the "whichever is later" clock hasn't
+  // started until there's a termination date.
+  retentionPurgeEligibleAt: date('retention_purge_eligible_at'),
+
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

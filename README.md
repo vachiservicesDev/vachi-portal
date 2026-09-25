@@ -27,10 +27,11 @@ today, 🚧 = not yet built.
 - ✅ Employee onboarding workflow: PDF document generation, e-signature via Dropbox Sign (sandbox), document storage in Supabase Storage. Vendor is swappable (DocuSign not yet chosen over Dropbox Sign — see docs/PLAN.md) and only one document type exists so far (a generic onboarding acknowledgment) — real forms (I-9 itself, offer letters, etc.) are added as more PDF generators following the same pattern.
 
 **I-9 / E-Verify compliance**
-- 🚧 Digital Form I-9 Sections 1–3, employer 3-business-day SLA tracking
-- 🚧 DHS E-Verify Web Services integration, TNC (Tentative Nonconfirmation) workflow
-- 🚧 I-9 retention-rule engine + ICE/DOL audit export
-- Note: E-Verify itself has no cost to employers, but using the live API requires enrolling as a DHS E-Verify employer (and employer agent, if running E-Verify on behalf of clients) — a business/legal step, not a code dependency. Sandbox/dev testing doesn't need this to be done first.
+- ✅ Digital Form I-9: Section 1 (employee self-entry, typed-name attestation), Section 2 (employer document verification, with a computed 3-business-day-from-hire due date), a combined PDF snapshot stored in Supabase Storage
+- ✅ E-Verify case tracking — **manual entry, not a live DHS API call**: an admin creates the case in the real E-Verify portal (once enrolled) and records the case number/status here. See `src/lib/everify/manualProvider.ts` for why a live integration wasn't written blind against unverified government API documentation.
+- 🚧 Section 3 reverification workflow (due date is computed off `employees.visa_expiry_date`, but there's no reminder/UI flow yet)
+- 🚧 TNC (Tentative Nonconfirmation) workflow, I-9 retention-purge automation (the date is computed on termination but nothing acts on it yet), ICE/DOL audit export bundle
+- Note: E-Verify itself has no cost to employers, but a live API integration requires enrolling as a DHS E-Verify employer (and employer agent, if running E-Verify on behalf of clients) first — a business/legal step, not a code dependency.
 
 **Immigration & visa compliance**
 - 🚧 Visa/document expiry tracking (OPT, STEM OPT, H1B, L1, O1, TN, E3) with 90/60/30-day alerts
@@ -77,8 +78,8 @@ cp .env.example .env.local   # fill in your own free Supabase project's values
 npm run db:push
 # In the Supabase SQL editor, run supabase/rls-policies.sql (defense-in-depth;
 # see "Architecture" above for what it does and doesn't protect)
-# In the Supabase dashboard: Storage -> New bucket -> name it
-# "onboarding-documents" -> leave it PRIVATE (do not check "Public bucket")
+# In the Supabase dashboard: Storage -> New bucket -> create two PRIVATE
+# buckets (do not check "Public bucket"): "onboarding-documents" and "i9-records"
 npm run dev
 ```
 
@@ -93,7 +94,7 @@ What's free/sandbox for local dev:
 - **Payroll provider**: sandbox/developer mode (no real money moves)
 - **E-signature vendor**: free developer sandbox (DocuSign or Dropbox Sign)
 - **Claude API**: pay-as-you-go, no subscription — a free trial credit covers dev-scale usage
-- **E-Verify**: no cost, but the live API needs employer enrollment first (see above) — until that's done, this module can be built and tested against mocked responses
+- **E-Verify**: no cost. Case tracking works today with no enrollment needed since case creation is manual-entry, not a live API call (see "Full functionality scope" above)
 
 ## Status
 
@@ -107,6 +108,12 @@ What's free/sandbox for local dev:
   verified against a live Dropbox Sign account from this environment (no
   outbound network access here) — run one real sandbox request before
   trusting the webhook/signature-verification code path in production.
-- **Remaining**, in order: I-9/E-Verify → training → payroll + timesheets →
+- **Phase 3 (I-9/E-Verify)**: done for Sections 1-2 and manual E-Verify case
+  tracking. Admin starts an I-9 from `/admin/i9`, employee completes Section
+  1 at `/i9`, admin completes Section 2 and records the E-Verify case number
+  from `/admin/i9/[id]`. Section 3 reverification due-date is computed but
+  has no reminder/action flow yet; TNC workflow and retention-purge
+  automation are also still open.
+- **Remaining**, in order: training → payroll + timesheets →
   immigration/compliance modules → messaging + admin reporting. This
   section is updated as each phase ships.

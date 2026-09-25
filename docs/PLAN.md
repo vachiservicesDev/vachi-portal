@@ -43,8 +43,14 @@ half-built everywhere at once.
    sandbox → webhook marks signed + stores final PDF in Storage. Real forms
    (I-9, offer letters, etc.) and the DocuSign-vs-Dropbox-Sign vendor
    decision are still open.
-3. **I-9 / E-Verify module** — digital I-9 Sections 1–3, E-Verify sandbox
-   integration, TNC workflow, retention-rule engine, audit export.
+3. **I-9 / E-Verify module** — ✅ done for Sections 1-2 + manual E-Verify
+   case tracking. E-Verify is deliberately manual-entry, not a live DHS API
+   call (writing a best-effort client against unverified federal API docs
+   was judged worse than not having one — see
+   `src/lib/everify/manualProvider.ts`). Still open: Section 3
+   reverification reminder/action flow, TNC workflow, retention-purge
+   automation (the date is computed but nothing acts on it), ICE/DOL audit
+   export bundle.
 4. **Training** — one consolidated system: task assignment, completion
    tracking, weekly summaries, performance reviews, materials/comments.
    (No legacy/v2 split to reconcile this time — designed as one system from
