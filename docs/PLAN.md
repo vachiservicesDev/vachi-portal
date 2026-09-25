@@ -69,11 +69,17 @@ half-built everywhere at once.
    data), green card sponsorship stage tracking. Still open: automated
    alerts (today it's a dashboard someone has to check) and joining
    document-level expiry in once that feature has data.
-7. **Messaging/notifications (Supabase Realtime) + admin dashboards,
-   reporting, audit-log UI.**
-8. **AI features** (can start once there's real data to work with, likely
-   alongside phases 2–3 for document intelligence specifically): Claude API
-   for document field extraction, compliance assistant, risk surfacing.
+7. **Messaging/notifications + admin dashboard/audit-log UI** — ✅ done.
+   1:1 messaging over Supabase Realtime (the one table where RLS is real
+   runtime enforcement, not defense-in-depth - see
+   `supabase/rls-policies.sql`), in-app notifications wired into a
+   representative set of actions, an admin home dashboard aggregating
+   pending work, and an audit-log UI (also representative coverage, not
+   every write). Reporting/CSV export is still open.
+8. **AI features** — 🚧 not started. Claude API for document field
+   extraction, compliance assistant, risk surfacing. See README.md,
+   "What's still genuinely open across the whole app" for this plus every
+   other open item in one place, now that all seven build phases are done.
 
 ## Verification per phase
 

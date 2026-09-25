@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
-import { trainingAssignments, trainingTasks } from '@/db/schema';
+import { employees, trainingAssignments, trainingTasks } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-import { and, eq, inArray } from 'drizzle-orm';
+import { createNotification } from '@/lib/notifications/create';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
 const assignSchema = z.object({ employeeIds: z.array(z.string().uuid()).min(1) });
 
@@ -40,6 +41,24 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     .insert(trainingAssignments)
     .values(toAssign.map((employeeId) => ({ taskId: task.id, employeeId })))
     .returning();
+
+  const notifiable = await db
+    .select({ userId: employees.userId })
+    .from(employees)
+    .where(and(inArray(employees.id, toAssign), isNotNull(employees.userId)));
+
+  await Promise.all(
+    notifiable.map((e) =>
+      createNotification({
+        userId: e.userId as string,
+        type: 'training_assigned',
+        title: 'New training assigned',
+        message: `You've been assigned: ${task.title}`,
+        actionUrl: '/training',
+        actionLabel: 'View training',
+      }),
+    ),
+  );
 
   return NextResponse.json({ assignments }, { status: 201 });
 }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { greenCardCases } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
+import { logAudit } from '@/lib/audit/log';
 import { eq } from 'drizzle-orm';
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
@@ -36,12 +37,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const body = updateSchema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ message: 'Invalid input' }, { status: 400 });
 
+  const [before] = await db.select().from(greenCardCases).where(eq(greenCardCases.id, params.id)).limit(1);
+  if (!before) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+
   const [updated] = await db
     .update(greenCardCases)
     .set({ ...body.data, stageUpdatedAt: new Date(), updatedAt: new Date() })
     .where(eq(greenCardCases.id, params.id))
     .returning();
 
-  if (!updated) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  await logAudit({
+    userId: gate.user.id,
+    action: 'green_card.stage_changed',
+    resourceType: 'green_card_case',
+    resourceId: updated.id,
+    oldValues: { stage: before.stage },
+    newValues: { stage: updated.stage },
+  });
+
   return NextResponse.json({ case: updated });
 }

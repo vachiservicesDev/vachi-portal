@@ -30,6 +30,9 @@ alter table pay_stubs enable row level security;
 alter table stem_opt_training_plans enable row level security;
 alter table h1b_public_access_files enable row level security;
 alter table green_card_cases enable row level security;
+alter table messages enable row level security;
+alter table notifications enable row level security;
+alter table audit_logs enable row level security;
 
 -- profiles: a user can see their own row; admins can see all.
 create policy "profiles_select_own" on profiles
@@ -214,4 +217,28 @@ create policy "green_card_all_admin" on green_card_cases
 create policy "green_card_select_own" on green_card_cases
   for select using (
     employee_id in (select id from employees where user_id = auth.uid())
+  );
+
+-- messages: THIS is the one table where RLS is the actual runtime
+-- enforcement, not defense-in-depth - the Realtime subscription in
+-- src/app/(dashboard)/messages/[userId]/page.tsx goes through the anon-key
+-- client and Realtime only ever delivers rows a policy allows the
+-- subscriber to select. Get this one right.
+create policy "messages_select_own" on messages
+  for select using (auth.uid() = sender_id or auth.uid() = recipient_id);
+create policy "messages_insert_own" on messages
+  for insert with check (auth.uid() = sender_id);
+create policy "messages_update_recipient" on messages
+  for update using (auth.uid() = recipient_id);
+
+create policy "notifications_select_own" on notifications
+  for select using (auth.uid() = user_id);
+create policy "notifications_update_own" on notifications
+  for update using (auth.uid() = user_id);
+
+-- audit_logs: admin-only, no employee access at all - it's a compliance
+-- record, not something anyone should be able to read about themselves.
+create policy "audit_logs_select_admin" on audit_logs
+  for select using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin')
   );

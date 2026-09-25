@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { employees, performanceReviews } from '@/db/schema';
 import { requireActiveUser } from '@/lib/auth/requireAdmin';
+import { createNotification } from '@/lib/notifications/create';
 import { eq } from 'drizzle-orm';
 
 const adminUpdateSchema = z.object({
@@ -46,6 +47,25 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       })
       .where(eq(performanceReviews.id, params.id))
       .returning();
+
+    if (submit) {
+      const [employee] = await db
+        .select({ userId: employees.userId })
+        .from(employees)
+        .where(eq(employees.id, updated.employeeId))
+        .limit(1);
+      if (employee?.userId) {
+        await createNotification({
+          userId: employee.userId,
+          type: 'performance_review_submitted',
+          title: 'New performance review',
+          message: `A performance review for ${updated.periodStart} – ${updated.periodEnd} is ready for you to view.`,
+          actionUrl: '/reviews',
+          actionLabel: 'View review',
+        });
+      }
+    }
+
     return NextResponse.json({ review: updated });
   }
 

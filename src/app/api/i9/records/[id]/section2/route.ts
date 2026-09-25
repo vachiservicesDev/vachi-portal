@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { i9Records } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
+import { logAudit } from '@/lib/audit/log';
 import { generateI9Pdf, type I9Section1Data } from '@/lib/pdf/i9';
 import { uploadI9Snapshot } from '@/lib/storage/i9';
 import { eq } from 'drizzle-orm';
@@ -52,6 +53,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     })
     .where(eq(i9Records.id, params.id))
     .returning();
+
+  await logAudit({
+    userId: gate.user.id,
+    action: 'i9.section2_completed',
+    resourceType: 'i9_record',
+    resourceId: updated.id,
+    newValues: section2Data,
+  });
 
   return NextResponse.json({ record: updated, snapshotPath: path });
 }

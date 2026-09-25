@@ -49,14 +49,15 @@ today, 🚧 = not yet built.
 - ✅ Payroll — **manual entry, not a live provider integration**: no vendor chosen yet (Gusto/Check/ADP still open, see docs/PLAN.md), so admin records pay runs and pay stubs after running payroll elsewhere (`/admin/payroll`), employees view their stubs (`/payroll`). Swapping in a real provider adapter later follows the same pattern as `src/lib/everify`.
 
 **Communication**
-- 🚧 Messaging between admin and employees
-- 🚧 Notification boards / in-app + email notifications (Supabase Realtime)
+- ✅ Messaging between admin and employees (`/messages`) — live delivery via Supabase Realtime, the one place in the app where RLS is the actual runtime enforcement rather than defense-in-depth (see `supabase/rls-policies.sql`)
+- ✅ In-app notifications (`/notifications`) — wired into a representative set of actions (training assignment, timesheet approve/reject, performance review submission); extend `src/lib/notifications/create.ts`'s call sites to cover more. 🚧 No email delivery yet, in-app only
 
 **Admin**
 - ✅ Middleware-protected admin/employee routing foundation
+- ✅ Admin home dashboard (`/admin`) — pending onboarding, overdue I-9 Section 2s, timesheets/summaries awaiting review, visas expiring within 30 days, with links into each
 - 🚧 Employee management, compliance dashboard, document oversight
 - 🚧 Reporting (compliance, analytics) with CSV/PDF export
-- 🚧 Audit-log admin UI (every write logged, visible to admins, not just captured in a table)
+- ✅ Audit-log admin UI (`/admin/audit-log`) — but only a representative set of sensitive actions write to it today (I-9 Section 2 completion, timesheet approve/reject, green card stage changes); extend `src/lib/audit/log.ts`'s call sites for full coverage
 
 **AI features** (Claude API, not just used as a dev tool)
 - 🚧 Document intelligence: auto-extract fields from uploaded passport/EAD/I-20/I-797 during onboarding
@@ -129,5 +130,38 @@ What's free/sandbox for local dev:
   dashboard, STEM OPT I-983 tracking, H-1B PAF management, and green card
   sponsorship pipeline are all live. Automated expiry alerts (vs. the
   admin having to check the dashboard) are still open.
-- **Remaining**: messaging + admin reporting/audit-log UI. This section is
-  updated as each phase ships.
+- **Phase 7 (Messaging, notifications, admin dashboard, audit log)**: done.
+  Real-time 1:1 messaging (Supabase Realtime), in-app notifications, an
+  admin home dashboard aggregating pending work, and an audit-log UI are
+  all live.
+
+## What's still genuinely open across the whole app
+
+All seven build phases are done, but "done" means each area has a real,
+working, tested implementation - not that every feature is exhaustive.
+Concretely still open, in one place rather than scattered per-phase above:
+
+- **Vendor decisions**: payroll provider (Gusto/Check/ADP), e-signature
+  vendor (Dropbox Sign is wired up; DocuSign was the alternative, never
+  built), DHS E-Verify employer enrollment (blocks the live API, not the
+  manual-entry path that works today).
+- **Automation that's currently manual dashboards instead of proactive
+  alerts**: visa expiry, I-9 Section 3 reverification, STEM OPT evaluation
+  deadlines - all trackable today, none of them push a notification yet.
+- **File uploads that don't exist yet**: training materials (a task just
+  links out via URL), a document-upload feature for the `documents` table
+  (defined in the schema, nothing reads or writes it).
+- **Reporting/export**: no CSV/PDF export anywhere, despite several admin
+  list views that would benefit from one.
+- **AI features**: none built. Document intelligence, the compliance
+  assistant, and risk-surfacing scans are all still just the plan in
+  docs/PLAN.md.
+- **Testing**: no automated tests exist. Given the compliance stakes (I-9,
+  payroll, e-signature), this is the highest-leverage next investment
+  before any of this handles real employee data.
+- **Not yet run against a live Supabase project**: everything here was
+  built and build-verified (`npm run build` succeeds, `tsc --noEmit` is
+  clean) in an environment with no outbound network access, so nothing has
+  been exercised against a real database, a real Dropbox Sign sandbox
+  request, or a real Realtime subscription. Do that verification pass
+  before trusting this in front of real users - see "Running this locally."

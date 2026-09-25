@@ -528,3 +528,24 @@ export const greenCardCases = pgTable('green_card_cases', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// --- Phase 7 (Messaging). Direct 1:1 messages between two profiles -
+// there's no "thread" table; a conversation is just every message where
+// (sender, recipient) is one of the two pairings between two users. Live
+// delivery is via Supabase Realtime's postgres_changes on this table
+// (src/app/(dashboard)/messages), which is why this goes through the
+// anon-key Supabase client on the read side even though writes go through
+// Drizzle like everything else - Realtime subscriptions only work through
+// Supabase's own client.
+export const messages = pgTable('messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  senderId: uuid('sender_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  recipientId: uuid('recipient_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
