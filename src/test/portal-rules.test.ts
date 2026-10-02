@@ -23,6 +23,7 @@ import { GET as threads } from '@/app/api/messages/threads/route';
 import { POST as sendMessage } from '@/app/api/messages/[userId]/route';
 import { POST as readAll } from '@/app/api/notifications/read-all/route';
 import { addMonths } from '@/lib/dates';
+import { safeNextPath } from '@/lib/auth/safe-next';
 import { businessDays } from '@/lib/paf/schema';
 import { resetDb, seedEmployee, seedProfile } from './db';
 import { getRequest, jsonRequest } from './http';
@@ -32,6 +33,7 @@ import { setCurrentUser } from './mockAuth';
 const authAdmin = {
   inviteUserByEmail: vi.fn(),
   generateLink: vi.fn(),
+  getUserById: vi.fn(),
 };
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ auth: { admin: authAdmin, resetPasswordForEmail: vi.fn(async () => ({ error: null })) } }),
@@ -91,6 +93,20 @@ describe('Portal rules added in the design-system pass', () => {
       expect(profile.role).toBe('admin');
     });
 
+    it('a reset for a linked employee goes to the login email set in Supabase, and syncs it', async () => {
+      const { employee, profile } = await seedEmployee({ email: 'old@example.com' });
+      authAdmin.getUserById.mockResolvedValueOnce({ data: { user: { id: profile!.id, email: 'New@Example.com' } }, error: null });
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: profile!.id }, properties: { action_link: 'https://auth.test/r' } }, error: null });
+
+      const res = await inviteEmployee(jsonRequest({ mode: 'link' }), { params: { id: employee.id } });
+      expect(res.status).toBe(200);
+      expect(authAdmin.generateLink).toHaveBeenCalledWith(expect.objectContaining({ type: 'recovery', email: 'new@example.com' }));
+      const [row] = await db.select().from(employees).where(eq(employees.id, employee.id));
+      expect(row.email).toBe('new@example.com');
+      const [prof] = await db.select().from(profiles).where(eq(profiles.id, profile!.id));
+      expect(prof.email).toBe('new@example.com');
+    });
+
     it('refuses to invite an inactive employee and is admin-only', async () => {
       const { employee, profile } = await seedEmployee({ linkToProfile: false });
       await db.update(employees).set({ status: 'inactive' }).where(eq(employees.id, employee.id));
@@ -103,6 +119,15 @@ describe('Portal rules added in the design-system pass', () => {
       const blocked = await inviteEmployee(jsonRequest({ mode: 'link' }), { params: { id: employee.id } });
       expect(blocked.status).toBe(403);
       void profile;
+    });
+  });
+
+  describe('sign-in redirects', () => {
+    it('keeps next on this site', () => {
+      expect(safeNextPath('/admin/employees?tab=1')).toBe('/admin/employees?tab=1');
+      for (const bad of ['//evil.example', '/\\evil.example', '/\\/evil.example', 'https://evil.example', '/a\tb', '', null]) {
+        expect(safeNextPath(bad)).toBeNull();
+      }
     });
   });
 

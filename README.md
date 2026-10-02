@@ -148,7 +148,7 @@ DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/vachi_test" npm run db:p
 DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/vachi_test" npm test
 ```
 
-64 tests across 10 files cover every phase's admin and employee scenarios
+66 tests across 10 files cover every phase's admin and employee scenarios
 against a real Postgres database via the real Drizzle queries - not
 against a live Supabase project (Supabase Auth, Storage, and Dropbox Sign
 are mocked in `src/test/setup.ts`, since those need real network access

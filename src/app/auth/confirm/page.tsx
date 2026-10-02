@@ -2,12 +2,13 @@
 
 import { Suspense, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { safeNextPath } from '@/lib/auth/safe-next';
 import { createClient } from '@/lib/supabase/client';
 import { AuthCard } from '@/components/auth/AuthCard';
 import { Loading } from '@/components/ui/ui';
 
 function safeNext(value: string | null) {
-  return value && value.startsWith('/') && !value.startsWith('//') ? value : '/';
+  return safeNextPath(value) ?? '/';
 }
 
 /**

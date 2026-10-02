@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AuthCard } from '@/components/auth/AuthCard';
+import { safeNextPath } from '@/lib/auth/safe-next';
 import { homeFor, loadSession } from '@/lib/auth/session';
 import { LoginForm } from './LoginForm';
 
@@ -15,13 +16,8 @@ const notices: Record<string, string> = {
   'link-invalid': 'That link has expired or was already used. Request a new one below or ask HR to resend your invite.',
 };
 
-/** Only same-site paths, so the redirect after sign-in can't be pointed at another site. */
-function safeNext(value: string | undefined) {
-  return value && value.startsWith('/') && !value.startsWith('//') ? value : null;
-}
-
 export default async function LoginPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
-  const next = safeNext(typeof searchParams.next === 'string' ? searchParams.next : undefined);
+  const next = safeNextPath(typeof searchParams.next === 'string' ? searchParams.next : undefined);
   const session = await loadSession();
   if (session?.profile) redirect(next ?? homeFor(session.profile.role));
   const reason = typeof searchParams.reason === 'string' ? notices[searchParams.reason] : undefined;

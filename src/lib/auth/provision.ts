@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { employees, profiles } from '@/db/schema';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -29,14 +29,21 @@ export async function inviteEmployee(employee: Employee, mode: 'email' | 'link',
   const admin = createAdminClient();
   const meta = { first_name: employee.firstName, last_name: employee.lastName };
 
-  // Already linked: send (or hand back) a password-reset link instead.
+  // Already linked: send (or hand back) a password-reset link instead, to the login's current
+  // email. It may have been changed in Supabase since, so bring the local records up to date.
   if (employee.userId) {
+    const { data: found, error: lookupError } = await admin.auth.admin.getUserById(employee.userId);
+    if (lookupError || !found.user) {
+      return { ok: false, status: 502, message: `Supabase couldn't find this employee's login: ${lookupError?.message ?? 'no user'}` };
+    }
+    const loginEmail = (found.user.email ?? email).toLowerCase();
+    if (loginEmail !== email) await syncLoginEmail(employee.id, employee.userId, loginEmail);
     if (mode === 'email') {
-      const { error } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
+      const { error } = await admin.auth.resetPasswordForEmail(loginEmail, { redirectTo });
       if (error) return { ok: false, status: 502, message: `Supabase couldn't send the email: ${error.message}` };
       return { ok: true, outcome: 'emailed', userId: employee.userId };
     }
-    const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
+    const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email: loginEmail, options: { redirectTo } });
     if (error) return { ok: false, status: 502, message: `Supabase couldn't create a sign-in link: ${error.message}` };
     return { ok: true, outcome: 'link', link: data.properties.action_link, userId: employee.userId };
   }
@@ -80,4 +87,18 @@ export async function linkEmployeeToUser(employeeId: string, userId: string, ema
     .update(employees)
     .set({ userId, updatedAt: new Date() })
     .where(and(eq(employees.id, employeeId), isNull(employees.userId)));
+}
+
+/**
+ * Copies a login email changed in Supabase onto the employee record and profile. Skips the
+ * employee record if another employee already uses that address, so the unique index holds.
+ */
+export async function syncLoginEmail(employeeId: string, userId: string, loginEmail: string) {
+  const [clash] = await db
+    .select({ id: employees.id })
+    .from(employees)
+    .where(and(sql`lower(${employees.email}) = ${loginEmail}`, ne(employees.id, employeeId)))
+    .limit(1);
+  if (!clash) await db.update(employees).set({ email: loginEmail, updatedAt: new Date() }).where(eq(employees.id, employeeId));
+  await db.update(profiles).set({ email: loginEmail }).where(eq(profiles.id, userId));
 }
