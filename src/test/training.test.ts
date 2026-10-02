@@ -73,14 +73,23 @@ describe('Training (Phase 4)', () => {
 
     setCurrentUser(profile!.id);
     await updateAssignment(jsonRequest({ status: 'in_progress' }), { params: { id: assignmentId } });
+    // A score sent by the employee is ignored: only HR records scores.
     const done = await updateAssignment(jsonRequest({ status: 'completed', score: 95 }), {
       params: { id: assignmentId },
     });
     expect(done.status).toBe(200);
     const { assignment } = await done.json();
     expect(assignment.status).toBe('completed');
-    expect(assignment.score).toBe(95);
+    expect(assignment.score).toBeNull();
     expect(assignment.completedAt).not.toBeNull();
+
+    // Once complete, the employee can't reopen it.
+    const reopen = await updateAssignment(jsonRequest({ status: 'in_progress' }), { params: { id: assignmentId } });
+    expect(reopen.status).toBe(409);
+
+    setCurrentUser(adminId);
+    const scored = await updateAssignment(jsonRequest({ score: 95 }), { params: { id: assignmentId } });
+    expect((await scored.json()).assignment.score).toBe(95);
   });
 
   it("an unrelated employee cannot touch someone else's assignment", async () => {
@@ -150,7 +159,7 @@ describe('Training (Phase 4)', () => {
 
     setCurrentUser(profile!.id);
     const beforeSubmit = await import('@/app/api/training/reviews/route').then((m) => m.GET());
-    expect((await beforeSubmit.json()).reviews).toHaveLength(1); // exists but...
+    expect((await beforeSubmit.json()).reviews).toHaveLength(0); // drafts stay with HR
 
     setCurrentUser(adminId);
     const submitRes = await updateReview(jsonRequest({ submit: true }), { params: { id: review.id } });
@@ -162,7 +171,14 @@ describe('Training (Phase 4)', () => {
     setCurrentUser(profile!.id);
     const ackRes = await updateReview(jsonRequest({ acknowledge: true }), { params: { id: review.id } });
     expect(ackRes.status).toBe(200);
-    expect((await ackRes.json()).review.employeeAcknowledgedAt).not.toBeNull();
+    const acked = (await ackRes.json()).review;
+    expect(acked.employeeAcknowledgedAt).not.toBeNull();
+    expect(acked.status).toBe('approved');
+
+    // Shared reviews are locked for HR.
+    setCurrentUser(adminId);
+    const locked = await updateReview(jsonRequest({ goals: 'changed' }), { params: { id: review.id } });
+    expect(locked.status).toBe(409);
 
     // Cannot acknowledge someone else's review.
     const { profile: outsider } = await seedEmployee();

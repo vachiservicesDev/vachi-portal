@@ -5,8 +5,16 @@ import { i9Records } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 import { getEVerifyProvider } from '@/lib/everify';
 import { eq } from 'drizzle-orm';
+import { logAudit } from '@/lib/audit/log';
 
-const everifySchema = z.object({ caseNumber: z.string().min(1) });
+// HR creates the case in the real E-Verify portal, then records its number here and, as the case
+// moves on, its result (manual entry; see src/lib/everify/manualProvider.ts).
+const everifySchema = z.object({
+  caseNumber: z.string().trim().min(1, 'Enter the E-Verify case number.'),
+  status: z
+    .enum(['submitted', 'employment_authorized', 'tentative_nonconfirmation', 'final_nonconfirmation', 'closed'])
+    .optional(),
+});
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const gate = await requireAdmin();
@@ -17,7 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const body = everifySchema.safeParse(await request.json());
   if (!body.success) {
-    return NextResponse.json({ message: 'caseNumber is required' }, { status: 400 });
+    return NextResponse.json({ message: 'caseNumber is required', errors: body.error.flatten() }, { status: 400 });
   }
 
   const provider = getEVerifyProvider();
@@ -30,12 +38,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     .update(i9Records)
     .set({
       everifyCaseNumber: result.caseNumber,
-      everifyStatus: result.status,
-      everifySubmittedAt: new Date(),
+      everifyStatus: body.data.status ?? result.status,
+      everifySubmittedAt: record.everifySubmittedAt ?? new Date(),
       updatedAt: new Date(),
     })
     .where(eq(i9Records.id, params.id))
     .returning();
+
+  await logAudit({
+    userId: gate.user.id,
+    action: 'everify_case_recorded',
+    resourceType: 'i9_record',
+    resourceId: record.id,
+    oldValues: { caseNumber: record.everifyCaseNumber, status: record.everifyStatus },
+    newValues: { caseNumber: updated.everifyCaseNumber, status: updated.everifyStatus },
+  });
 
   return NextResponse.json({ record: updated });
 }

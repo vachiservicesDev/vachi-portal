@@ -1,94 +1,93 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
+import { useAction, useResource } from '@/lib/client/api';
+import { fullName, statusOf } from '@/lib/status';
+import { Button } from '@/components/ui/Button';
+import { FormStatus } from '@/components/ui/forms';
+import { TextAreaField } from '@/components/ui/fields';
+import { Alert, Chip, DateRange, Loading, PageHeader, Panel, formatHours } from '@/components/ui/ui';
+import { EntryList, type Entry } from '@/components/timesheets/EntryList';
 
 interface Timesheet {
   id: string;
   weekStarting: string;
   weekEnding: string;
   totalHours: string;
+  overtimeHours: string | null;
   status: string;
-}
-
-interface Entry {
-  id: string;
-  date: string;
-  hours: string;
-  taskDescription: string | null;
+  rejectionReason: string | null;
 }
 
 export default function AdminTimesheetDetailPage() {
   const params = useParams<{ id: string }>();
-  const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const { data, error, loading, reload } = useResource<{ timesheet: Timesheet; entries: Entry[]; employee: { firstName: string; lastName: string } | null }>(
+    `/api/timesheets/${params.id}`,
+  );
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function load() {
-    const res = await fetch(`/api/timesheets/${params.id}`);
-    if (res.ok) {
-      const data = await res.json();
-      setTimesheet(data.timesheet);
-      setEntries(data.entries);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load closes over params.id only
-  }, [params.id]);
+  const action = useAction();
 
   async function review(decision: 'approved' | 'rejected') {
-    setBusy(true);
-    await fetch(`/api/timesheets/${params.id}/review`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision, rejectionReason: reason || undefined }),
-    });
-    setBusy(false);
-    load();
+    const result = await action.run(
+      decision,
+      `/api/timesheets/${params.id}/review`,
+      { method: 'PATCH', body: { decision, rejectionReason: reason.trim() || undefined } },
+      decision === 'approved' ? 'Approved. The employee has been notified.' : 'Returned to the employee with your note.',
+    );
+    if (result.ok) await reload();
   }
 
-  if (!timesheet) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  if (loading && !data) return <Loading />;
+  if (!data) return <Alert title="Couldn't load this timesheet">{error}</Alert>;
+
+  const { timesheet, entries, employee } = data;
+  const st = statusOf('timesheet', timesheet.status);
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">
-        {timesheet.weekStarting} – {timesheet.weekEnding}
-      </h1>
-      <p className="mt-1 text-sm text-gray-500">
-        status: {timesheet.status} · {timesheet.totalHours}h total
-      </p>
-
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {entries.map((e) => (
-          <li key={e.id} className="flex items-center justify-between px-4 py-2 text-sm">
-            <span>{e.date}</span>
-            <span>{e.hours}h</span>
-            <span className="text-gray-500">{e.taskDescription}</span>
-          </li>
-        ))}
-      </ul>
-
-      {timesheet.status === 'submitted' && (
-        <div className="mt-6 space-y-3">
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Rejection reason (if rejecting)"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          />
-          <div className="flex gap-2">
-            <button onClick={() => review('approved')} disabled={busy} className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50">
-              Approve
-            </button>
-            <button onClick={() => review('rejected')} disabled={busy} className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50">
-              Reject
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    <>
+      <PageHeader
+        back={{ href: '/admin/timesheets', label: 'Timesheets' }}
+        eyebrow={employee ? fullName(employee.firstName, employee.lastName) : undefined}
+        title={<DateRange from={timesheet.weekStarting} to={timesheet.weekEnding} />}
+        lead={
+          <span className="flex flex-wrap items-center gap-2">
+            {formatHours(timesheet.totalHours)} total
+            {Number(timesheet.overtimeHours) > 0 && <> · {formatHours(timesheet.overtimeHours)} overtime</>}
+            <Chip tone={st.tone}>{st.label}</Chip>
+          </span>
+        }
+      />
+      <div className="grid gap-6">
+        <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={{ rejectionReason: 'Reason' }} />
+        {timesheet.status === 'rejected' && timesheet.rejectionReason && <Alert tone="info" title="Returned with this note">{timesheet.rejectionReason}</Alert>}
+        <Panel title="Hours">
+          <EntryList entries={entries} />
+        </Panel>
+        {timesheet.status === 'submitted' && (
+          <Panel title="Decision">
+            <div className="grid gap-5">
+              <TextAreaField
+                name="rejectionReason"
+                label="Note to the employee"
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                hint="Required if you return the timesheet. Say what needs fixing."
+                errors={action.fieldErrors}
+              />
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <Button variant="danger" onClick={() => review('rejected')} busy={action.busy === 'rejected'} busyLabel="Returning" disabled={!!action.busy}>
+                  Return for changes
+                </Button>
+                <Button onClick={() => review('approved')} busy={action.busy === 'approved'} busyLabel="Approving" disabled={!!action.busy}>
+                  Approve timesheet
+                </Button>
+              </div>
+            </div>
+          </Panel>
+        )}
+      </div>
+    </>
   );
 }

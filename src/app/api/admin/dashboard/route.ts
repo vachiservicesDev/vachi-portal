@@ -8,7 +8,7 @@ import {
   weeklyTrainingSummaries,
 } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-import { and, eq, isNotNull, lt, ne } from 'drizzle-orm';
+import { and, eq, isNotNull, lt, ne, notInArray } from 'drizzle-orm';
 
 export async function GET() {
   const gate = await requireAdmin();
@@ -29,7 +29,7 @@ export async function GET() {
     db
       .select({ id: onboardingSessions.id })
       .from(onboardingSessions)
-      .where(ne(onboardingSessions.status, 'completed')),
+      .where(notInArray(onboardingSessions.status, ['completed', 'cancelled'])),
     db
       .select({ id: i9Records.id })
       .from(i9Records)
@@ -42,7 +42,9 @@ export async function GET() {
     db
       .select({ id: employees.id })
       .from(employees)
-      .where(and(isNotNull(employees.visaExpiryDate), lt(employees.visaExpiryDate, in30DaysStr))),
+      .where(
+          and(isNotNull(employees.visaExpiryDate), lt(employees.visaExpiryDate, in30DaysStr), ne(employees.status, 'inactive')),
+        ),
   ]);
 
   return NextResponse.json({

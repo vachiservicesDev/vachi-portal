@@ -1,51 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useResource } from '@/lib/client/api';
+import { statusOf } from '@/lib/status';
+import { StageTracker } from '@/components/immigration/StageTracker';
+import { Alert, Chip, DetailList, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface GcCase {
   stage: string;
   priorityDate: string | null;
+  stageUpdatedAt: string;
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  perm_prep: 'PERM preparation',
-  perm_filed: 'PERM filed',
-  perm_certified: 'PERM certified',
-  i140_filed: 'I-140 filed',
-  i140_approved: 'I-140 approved',
-  i485_filed: 'I-485 filed',
-  i485_approved: 'I-485 approved',
-  denied: 'Denied',
-};
-
 export default function GreenCardPage() {
-  const [gcCase, setGcCase] = useState<GcCase | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/green-card/me')
-      .then((res) => res.json())
-      .then((data) => {
-        setGcCase(data.case);
-        setLoading(false);
-      });
-  }, []);
-
-  if (loading) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  const { data, error, loading } = useResource<{ case: GcCase | null }>('/api/green-card/me');
+  const gc = data?.case;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">My Green Card Sponsorship</h1>
-      {!gcCase ? (
-        <p className="mt-4 text-sm text-gray-500">No sponsorship case on file.</p>
+    <>
+      <PageHeader eyebrow="Immigration" title="Green card" lead="Where your sponsorship stands. HR updates this as each filing moves forward." />
+      {error && <Alert title="Couldn't load your case">{error}</Alert>}
+      {loading && !data ? (
+        <Loading />
+      ) : !gc ? (
+        <EmptyState title="No sponsorship case on file">If you expected one, message HR.</EmptyState>
       ) : (
-        <div className="mt-6 rounded-lg border border-gray-200 p-4">
-          <p className="font-medium">{STAGE_LABELS[gcCase.stage] ?? gcCase.stage}</p>
-          {gcCase.priorityDate && (
-            <p className="mt-1 text-sm text-gray-500">Priority date: {gcCase.priorityDate}</p>
-          )}
-        </div>
+        <Panel title="Your case" actions={<Chip tone={statusOf('greenCard', gc.stage).tone}>{statusOf('greenCard', gc.stage).label}</Chip>}>
+          <StageTracker stage={gc.stage} />
+          <div className="mt-8 border-t border-line pt-6">
+            <DetailList
+              items={[
+                { label: 'Priority date', value: gc.priorityDate ? <When iso={gc.priorityDate} /> : 'Not set yet' },
+                { label: 'Stage last changed', value: <When iso={gc.stageUpdatedAt} /> },
+              ]}
+            />
+          </div>
+        </Panel>
       )}
-    </div>
+    </>
   );
 }

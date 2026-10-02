@@ -1,75 +1,78 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useAction, useResource } from '@/lib/client/api';
+import { statusOf } from '@/lib/status';
+import { ReviewBody, type ReviewContent } from '@/components/reviews/ReviewBody';
+import { Button } from '@/components/ui/Button';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, Chip, DateRange, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
-interface Review {
+interface Review extends ReviewContent {
   id: string;
   periodStart: string;
   periodEnd: string;
-  rating: number | null;
-  strengths: string | null;
-  areasForImprovement: string | null;
-  goals: string | null;
   status: string;
+  submittedAt: string | null;
   employeeAcknowledgedAt: string | null;
 }
 
-export default function EmployeeReviewsPage() {
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
-
-  async function load() {
-    const res = await fetch('/api/training/reviews');
-    if (res.ok) setReviews((await res.json()).reviews);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
+export default function ReviewsPage() {
+  const { data, error, loading, reload } = useResource<{ reviews: Review[] }>('/api/training/reviews');
+  const action = useAction();
+  const reviews = data?.reviews ?? [];
 
   async function acknowledge(id: string) {
-    setBusy(id);
-    await fetch(`/api/training/reviews/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ acknowledge: true }),
-    });
-    setBusy(null);
-    load();
+    const result = await action.run(id, `/api/training/reviews/${id}`, { method: 'PATCH', body: { acknowledge: true } }, 'Thanks. HR can see you’ve read your review.');
+    if (result.ok) reload();
   }
 
-  const visible = reviews.filter((r) => r.status !== 'draft');
-
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">My Performance Reviews</h1>
-
-      <ul className="mt-6 space-y-4">
-        {visible.map((r) => (
-          <li key={r.id} className="rounded-lg border border-gray-200 p-4">
-            <p className="font-medium">
-              {r.periodStart} – {r.periodEnd}
-              {r.rating && ` · ${r.rating}/5`}
-            </p>
-            {r.strengths && <p className="mt-2 text-sm"><span className="font-medium">Strengths:</span> {r.strengths}</p>}
-            {r.areasForImprovement && <p className="mt-1 text-sm"><span className="font-medium">Areas for improvement:</span> {r.areasForImprovement}</p>}
-            {r.goals && <p className="mt-1 text-sm"><span className="font-medium">Goals:</span> {r.goals}</p>}
-
-            {r.employeeAcknowledgedAt ? (
-              <p className="mt-3 text-sm text-green-600">Acknowledged ✓</p>
-            ) : (
-              <button
-                onClick={() => acknowledge(r.id)}
-                disabled={busy === r.id}
-                className="mt-3 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+    <>
+      <PageHeader eyebrow="Growth" title="Performance reviews" lead="Reviews HR has shared with you. Acknowledging one tells HR you've read it; it doesn't mean you agree with every point." />
+      {error && <Alert title="Couldn't load your reviews">{error}</Alert>}
+      <div className="grid gap-6">
+        <FormStatus error={action.error} success={action.success} />
+        {loading && !data ? (
+          <Loading />
+        ) : reviews.length === 0 ? (
+          <EmptyState title="No reviews yet">You’ll get a notification when HR shares one.</EmptyState>
+        ) : (
+          reviews.map((r) => {
+            const s = statusOf('review', r.status);
+            return (
+              <Panel
+                key={r.id}
+                title={
+                  <>
+                    Review for <DateRange from={r.periodStart} to={r.periodEnd} />
+                  </>
+                }
+                description={
+                  r.submittedAt ? (
+                    <>
+                      Shared <When iso={r.submittedAt} />
+                    </>
+                  ) : undefined
+                }
+                actions={<Chip tone={s.tone}>{s.label}</Chip>}
               >
-                Acknowledge
-              </button>
-            )}
-          </li>
-        ))}
-        {visible.length === 0 && <li className="text-sm text-gray-500">No reviews yet.</li>}
-      </ul>
-    </div>
+                <ReviewBody review={r} />
+                <div className="mt-6 border-t border-line pt-5">
+                  {r.employeeAcknowledgedAt ? (
+                    <p className="text-sm text-ink-2">
+                      You acknowledged this review on <When iso={r.employeeAcknowledgedAt} />.
+                    </p>
+                  ) : (
+                    <Button busy={action.busy === r.id} busyLabel="Saving…" onClick={() => acknowledge(r.id)}>
+                      I’ve read this review
+                    </Button>
+                  )}
+                </div>
+              </Panel>
+            );
+          })
+        )}
+      </div>
+    </>
   );
 }

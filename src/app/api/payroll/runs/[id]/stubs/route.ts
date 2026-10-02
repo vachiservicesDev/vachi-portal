@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
-import { payStubs } from '@/db/schema';
+import { payRuns, payStubs } from '@/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 
-const createSchema = z.object({
-  employeeId: z.string().uuid(),
-  grossPay: z.coerce.number().nonnegative(),
-  netPay: z.coerce.number().nonnegative(),
-});
+const createSchema = z
+  .object({
+    employeeId: z.string().uuid('Choose an employee.'),
+    grossPay: z.coerce.number().nonnegative('Gross pay can’t be negative.'),
+    netPay: z.coerce.number().nonnegative('Net pay can’t be negative.'),
+  })
+  .refine((v) => v.netPay <= v.grossPay, { message: 'Net pay can’t be more than gross pay.', path: ['netPay'] });
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const gate = await requireAdmin();
@@ -19,6 +22,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     return NextResponse.json({ message: 'Invalid input', errors: body.error.flatten() }, {
       status: 400,
     });
+  }
+
+  const [run] = await db.select({ id: payRuns.id }).from(payRuns).where(eq(payRuns.id, params.id)).limit(1);
+  if (!run) return NextResponse.json({ message: 'Pay run not found' }, { status: 404 });
+
+  const [existing] = await db
+    .select({ id: payStubs.id })
+    .from(payStubs)
+    .where(and(eq(payStubs.payRunId, params.id), eq(payStubs.employeeId, body.data.employeeId)))
+    .limit(1);
+  if (existing) {
+    return NextResponse.json(
+      { message: 'This employee already has a stub in this pay run.', errors: { fieldErrors: { employeeId: ['Already has a stub in this pay run.'] } } },
+      { status: 409 },
+    );
   }
 
   const [stub] = await db

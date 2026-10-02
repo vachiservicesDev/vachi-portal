@@ -1,3 +1,4 @@
+import { ownEmployee } from '@/lib/employees';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, i9Records } from '@/db/schema';
@@ -11,7 +12,7 @@ export async function GET() {
   const [employee] = await db
     .select()
     .from(employees)
-    .where(eq(employees.email, gate.profile.email))
+    .where(ownEmployee(gate.profile))
     .limit(1);
   if (!employee) return NextResponse.json({ record: null });
 

@@ -1,3 +1,4 @@
+import { ownEmployee } from '@/lib/employees';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, onboardingDocuments, onboardingSessions, profiles } from '@/db/schema';
@@ -16,7 +17,7 @@ export async function GET() {
   const [profile] = await db.select().from(profiles).where(eq(profiles.id, user.id)).limit(1);
   if (!profile) return NextResponse.json({ session: null, documents: [] });
 
-  const [employee] = await db.select().from(employees).where(eq(employees.email, profile.email)).limit(1);
+  const [employee] = await db.select().from(employees).where(ownEmployee(profile)).limit(1);
   if (!employee) return NextResponse.json({ session: null, documents: [] });
 
   const [session] = await db

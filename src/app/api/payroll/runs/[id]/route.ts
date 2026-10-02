@@ -14,6 +14,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   const stubs = await db
     .select({
       id: payStubs.id,
+      employeeId: payStubs.employeeId,
       grossPay: payStubs.grossPay,
       netPay: payStubs.netPay,
       employeeFirstName: employees.firstName,

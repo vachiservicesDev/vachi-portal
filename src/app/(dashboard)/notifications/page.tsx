@@ -1,7 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAction, useResource } from '@/lib/client/api';
+import { Button } from '@/components/ui/Button';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, Chip, EmptyState, Loading, PageHeader, When } from '@/components/ui/ui';
 
 interface Notification {
   id: string;
@@ -15,54 +19,91 @@ interface Notification {
 }
 
 export default function NotificationsPage() {
-  const [items, setItems] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { data, error, loading, setData } = useResource<{ notifications: Notification[] }>('/api/notifications/me');
+  const action = useAction();
+  const items = data?.notifications ?? [];
+  const unread = items.filter((n) => n.status === 'unread').length;
 
-  async function load() {
-    const res = await fetch('/api/notifications/me');
-    if (res.ok) setItems((await res.json()).notifications);
-    setLoading(false);
+  function markLocally(ids: string[] | 'all') {
+    setData((d) => (d ? { notifications: d.notifications.map((n) => (ids === 'all' || ids.includes(n.id) ? { ...n, status: 'read' } : n)) } : d));
+    // The unread badge in the top bar comes from the server.
+    router.refresh();
   }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   async function markRead(id: string) {
-    await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
-    load();
+    const result = await action.run(id, `/api/notifications/${id}/read`, { method: 'POST' });
+    if (result.ok) markLocally([id]);
   }
 
-  if (loading) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  async function markAll() {
+    const result = await action.run('all', '/api/notifications/read-all', { method: 'POST' });
+    if (result.ok) markLocally('all');
+  }
+
+  async function open(n: Notification) {
+    if (n.status === 'unread') await action.run(n.id, `/api/notifications/${n.id}/read`, { method: 'POST' });
+    if (n.actionUrl) router.push(n.actionUrl);
+  }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Notifications</h1>
-
-      <ul className="mt-6 space-y-2">
-        {items.map((n) => (
-          <li
-            key={n.id}
-            className={`rounded-lg border p-4 ${n.status === 'unread' ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200'}`}
-          >
-            <p className="font-medium">{n.title}</p>
-            <p className="mt-1 text-sm text-gray-600">{n.message}</p>
-            <div className="mt-2 flex items-center gap-3 text-sm">
-              {n.actionUrl && (
-                <Link href={n.actionUrl} className="text-indigo-600 hover:underline">
-                  {n.actionLabel ?? 'View'} →
-                </Link>
-              )}
-              {n.status === 'unread' && (
-                <button onClick={() => markRead(n.id)} className="text-gray-500 hover:underline">
-                  Mark read
-                </button>
-              )}
-            </div>
-          </li>
-        ))}
-        {items.length === 0 && <li className="text-sm text-gray-500">No notifications.</li>}
-      </ul>
-    </div>
+    <>
+      <PageHeader
+        eyebrow="Communication"
+        title="Notifications"
+        lead={unread ? `${unread} unread.` : 'You’re all caught up.'}
+        actions={
+          unread > 0 ? (
+            <Button variant="secondary" busy={action.busy === 'all'} busyLabel="Marking…" onClick={markAll}>
+              Mark all as read
+            </Button>
+          ) : undefined
+        }
+      />
+      {error && <Alert title="Couldn't load notifications">{error}</Alert>}
+      <FormStatus error={action.error} />
+      {loading && !data ? (
+        <Loading />
+      ) : items.length === 0 ? (
+        <EmptyState title="No notifications">Assignments, reviews and returned timesheets show up here.</EmptyState>
+      ) : (
+        <ul className="grid gap-3">
+          {items.map((n) => {
+            const isUnread = n.status === 'unread';
+            return (
+              <li key={n.id} className={`rounded-lg border p-4 sm:p-5 ${isUnread ? 'border-navy-700/25 bg-navy-50' : 'border-line bg-white'}`}>
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+                  <p className="flex min-w-0 items-center gap-2 font-semibold text-ink">
+                    {isUnread && <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-teal-600" />}
+                    <span className="min-w-0 break-words">{n.title}</span>
+                    {isUnread && <span className="sr-only">(unread)</span>}
+                  </p>
+                  <span className="text-sm text-muted">
+                    <When iso={n.createdAt} withTime />
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-ink-2">{n.message}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {(n.priority === 'high' || n.priority === 'critical') && <Chip tone={n.priority === 'critical' ? 'danger' : 'warning'}>{n.priority === 'critical' ? 'Urgent' : 'Important'}</Chip>}
+                  {n.actionUrl && (
+                    <Button size="sm" onClick={() => open(n)}>
+                      {n.actionLabel ?? 'Open'}
+                    </Button>
+                  )}
+                  {isUnread && (
+                    <Button size="sm" variant="ghost" busy={action.busy === n.id} busyLabel="Marking…" onClick={() => markRead(n.id)}>
+                      Mark as read
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="mt-8 text-sm text-muted">
+        Looking for a conversation? <Link href="/messages" className="link">Go to messages</Link>.
+      </p>
+    </>
   );
 }

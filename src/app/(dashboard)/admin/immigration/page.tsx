@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useResource } from '@/lib/client/api';
+import { fullName, visaLabel } from '@/lib/status';
+import { Alert, Chip, DataTable, EmptyState, Loading, PageHeader, When, type Tone } from '@/components/ui/ui';
 
 interface Row {
   id: string;
@@ -12,58 +15,72 @@ interface Row {
   urgency: 'expired' | 'critical' | 'warning' | 'ok';
 }
 
-const urgencyStyles: Record<Row['urgency'], string> = {
-  expired: 'bg-red-100 text-red-800',
-  critical: 'bg-orange-100 text-orange-800',
-  warning: 'bg-yellow-100 text-yellow-800',
-  ok: 'bg-green-100 text-green-800',
+const URGENCY: Record<Row['urgency'], { tone: Tone; label: (d: number) => string }> = {
+  expired: { tone: 'danger', label: (d) => `Expired ${Math.abs(d)} ${Math.abs(d) === 1 ? 'day' : 'days'} ago` },
+  critical: { tone: 'danger', label: (d) => (d === 0 ? 'Expires today' : `${d} ${d === 1 ? 'day' : 'days'} left`) },
+  warning: { tone: 'warning', label: (d) => `${d} days left` },
+  ok: { tone: 'muted', label: (d) => `${d} days left` },
 };
 
 export default function AdminImmigrationPage() {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/immigration/dashboard')
-      .then((res) => res.json())
-      .then((data) => {
-        setRows(data.employees);
-        setLoading(false);
-      });
-  }, []);
-
-  if (loading) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  const { data, error, loading } = useResource<{ employees: Row[] }>('/api/immigration/dashboard');
+  const rows = data?.employees ?? [];
+  const counts = {
+    expired: rows.filter((r) => r.urgency === 'expired').length,
+    critical: rows.filter((r) => r.urgency === 'critical').length,
+    warning: rows.filter((r) => r.urgency === 'warning').length,
+  };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Immigration Tracker</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        Visa expiry status, sorted by urgency. Document-level expiry tracking joins in once the
-        documents feature has real data.
-      </p>
-
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {rows.map((r) => (
-          <li key={r.id} className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="font-medium">
-                {r.firstName} {r.lastName}
-              </p>
-              <p className="text-sm text-gray-500">
-                {r.visaType} · expires {r.visaExpiryDate}
-              </p>
-            </div>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${urgencyStyles[r.urgency]}`}>
-              {r.daysUntilExpiry !== null && r.daysUntilExpiry < 0
-                ? `expired ${Math.abs(r.daysUntilExpiry)}d ago`
-                : `${r.daysUntilExpiry}d left`}
-            </span>
-          </li>
-        ))}
-        {rows.length === 0 && (
-          <li className="px-4 py-3 text-sm text-gray-500">No employees with a visa expiry date set.</li>
-        )}
-      </ul>
-    </div>
+    <>
+      <PageHeader
+        eyebrow="Compliance"
+        title="Visa expirations"
+        lead="Active employees with a visa end date, soonest first. Within 30 days is urgent; within 90 days needs planning."
+      />
+      {error && <Alert title="Couldn't load visa dates">{error}</Alert>}
+      {loading && !data ? (
+        <Loading />
+      ) : rows.length === 0 ? (
+        <EmptyState title="No visa dates on file">Add a visa type and expiry date on an employee’s record to track it here.</EmptyState>
+      ) : (
+        <div className="grid gap-6">
+          <dl className="grid grid-cols-3 gap-3 sm:gap-4">
+            {[
+              { label: 'Expired', value: counts.expired, cls: 'text-danger-700' },
+              { label: 'Within 30 days', value: counts.critical, cls: 'text-danger-700' },
+              { label: 'Within 90 days', value: counts.warning, cls: 'text-amber-800' },
+            ].map((c) => (
+              <div key={c.label} className="rounded-lg border border-line bg-white p-4 sm:p-5">
+                <dt className="t-label text-muted">{c.label}</dt>
+                <dd className={`font-display mt-2 text-3xl font-semibold ${c.value ? c.cls : 'text-ink'}`}>{c.value}</dd>
+              </div>
+            ))}
+          </dl>
+          <DataTable
+            caption="Visa expirations"
+            rows={rows}
+            rowKey={(r) => r.id}
+            columns={[
+              {
+                header: 'Employee',
+                primary: true,
+                cell: (r) => (
+                  <Link href={`/admin/employees/${r.id}`} className="font-semibold text-navy-700 hover:underline">
+                    {fullName(r.firstName, r.lastName)}
+                  </Link>
+                ),
+              },
+              { header: 'Visa', cell: (r) => visaLabel(r.visaType) },
+              { header: 'Expires', cell: (r) => <When iso={r.visaExpiryDate} /> },
+              {
+                header: 'Time left',
+                cell: (r) => (r.daysUntilExpiry === null ? '—' : <Chip tone={URGENCY[r.urgency].tone}>{URGENCY[r.urgency].label(r.daysUntilExpiry)}</Chip>),
+              },
+            ]}
+          />
+        </div>
+      )}
+    </>
   );
 }

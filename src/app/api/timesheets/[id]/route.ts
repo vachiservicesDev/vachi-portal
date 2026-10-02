@@ -1,3 +1,4 @@
+import { ownsEmployee } from '@/lib/employees';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, timesheetEntries, timesheets } from '@/db/schema';
@@ -17,7 +18,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       .from(employees)
       .where(eq(employees.id, timesheet.employeeId))
       .limit(1);
-    if (!employee || employee.email !== gate.profile.email) {
+    if (!ownsEmployee(employee, gate.profile)) {
       return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     }
   }
@@ -28,5 +29,11 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     .where(eq(timesheetEntries.timesheetId, params.id))
     .orderBy(asc(timesheetEntries.date));
 
-  return NextResponse.json({ timesheet, entries });
+  const [owner] = await db
+    .select({ firstName: employees.firstName, lastName: employees.lastName })
+    .from(employees)
+    .where(eq(employees.id, timesheet.employeeId))
+    .limit(1);
+
+  return NextResponse.json({ timesheet, entries, employee: owner ?? null });
 }

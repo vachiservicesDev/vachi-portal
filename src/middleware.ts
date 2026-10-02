@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/auth'];
+const PUBLIC_PATHS = ['/login', '/auth', '/forgot-password'];
 
 // Refreshes the Supabase session cookie on every request and gates
 // non-public routes — replaces the legacy app's authenticateToken

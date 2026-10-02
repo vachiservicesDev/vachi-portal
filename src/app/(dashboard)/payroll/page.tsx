@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useResource } from '@/lib/client/api';
+import { Alert, DataTable, DateRange, EmptyState, Loading, PageHeader, When, formatMoney } from '@/components/ui/ui';
 
 interface Stub {
   id: string;
@@ -12,37 +13,44 @@ interface Stub {
 }
 
 export default function PayrollPage() {
-  const [stubs, setStubs] = useState<Stub[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/payroll/stubs/me')
-      .then((res) => res.json())
-      .then((data) => {
-        setStubs(data.stubs);
-        setLoading(false);
-      });
-  }, []);
-
-  if (loading) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  const { data, error, loading } = useResource<{ stubs: Stub[] }>('/api/payroll/stubs/me');
+  const stubs = data?.stubs ?? [];
+  const ytdYear = String(new Date().getFullYear());
+  const ytd = stubs.filter((s) => s.payDate?.startsWith(ytdYear)).reduce((acc, s) => ({ gross: acc.gross + Number(s.grossPay), net: acc.net + Number(s.netPay) }), { gross: 0, net: 0 });
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">My Pay Stubs</h1>
-
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {stubs.map((s) => (
-          <li key={s.id} className="flex items-center justify-between px-4 py-3 text-sm">
-            <span>
-              {s.payPeriodStart} – {s.payPeriodEnd} (paid {s.payDate})
-            </span>
-            <span className="text-gray-500">
-              gross ${s.grossPay} · net ${s.netPay}
-            </span>
-          </li>
-        ))}
-        {stubs.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No pay stubs yet.</li>}
-      </ul>
-    </div>
+    <>
+      <PageHeader eyebrow="Work and pay" title="Pay stubs" lead="Your pay stubs, newest first. If something looks wrong, message HR." />
+      {error && <Alert title="Couldn't load your pay stubs">{error}</Alert>}
+      {loading && !data ? (
+        <Loading />
+      ) : stubs.length === 0 ? (
+        <EmptyState title="No pay stubs yet">Your stubs appear here once HR records your first pay run.</EmptyState>
+      ) : (
+        <div className="grid gap-6">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-lg border border-line bg-white p-5">
+              <dt className="t-label text-muted">Gross pay in {ytdYear}</dt>
+              <dd className="font-display mt-2 text-3xl font-semibold text-ink">{formatMoney(ytd.gross)}</dd>
+            </div>
+            <div className="rounded-lg border border-line bg-white p-5">
+              <dt className="t-label text-muted">Net pay in {ytdYear}</dt>
+              <dd className="font-display mt-2 text-3xl font-semibold text-ink">{formatMoney(ytd.net)}</dd>
+            </div>
+          </dl>
+          <DataTable
+            caption="Your pay stubs"
+            rows={stubs}
+            rowKey={(s) => s.id}
+            columns={[
+              { header: 'Pay date', primary: true, cell: (s) => <When iso={s.payDate} /> },
+              { header: 'Pay period', cell: (s) => <DateRange from={s.payPeriodStart} to={s.payPeriodEnd} /> },
+              { header: 'Gross pay', align: 'right', cell: (s) => formatMoney(s.grossPay) },
+              { header: 'Net pay', align: 'right', cell: (s) => formatMoney(s.netPay) },
+            ]}
+          />
+        </div>
+      )}
+    </>
   );
 }
