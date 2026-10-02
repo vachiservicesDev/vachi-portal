@@ -6,7 +6,7 @@ import { requireAdmin } from '@/lib/auth/requireAdmin';
 import { createNotification } from '@/lib/notifications/create';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
-const assignSchema = z.object({ employeeIds: z.array(z.string().uuid()).min(1) });
+const assignSchema = z.object({ employeeIds: z.array(z.string().uuid()).min(1, 'Choose at least one employee.') });
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const gate = await requireAdmin();
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   const body = assignSchema.safeParse(await request.json());
   if (!body.success) {
-    return NextResponse.json({ message: 'employeeIds is required' }, { status: 400 });
+    return NextResponse.json({ message: 'Choose at least one employee.', errors: body.error.flatten() }, { status: 400 });
   }
 
   // Skip employees already assigned to this task (idempotent bulk-assign).

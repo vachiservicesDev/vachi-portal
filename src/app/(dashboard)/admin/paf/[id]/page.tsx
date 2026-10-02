@@ -1,42 +1,77 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useAction, useResource } from '@/lib/client/api';
+import { fullName } from '@/lib/status';
+import { PAF_LABELS, PafFields, PostingChip, type PafValues } from '@/components/paf/PafFields';
+import { Button } from '@/components/ui/Button';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, DateRange, DetailList, Loading, PageHeader, Panel, When, formatMoney } from '@/components/ui/ui';
 
-interface PafFile {
-  lcaCaseNumber: string;
-  lcaFilingDate: string;
-  worksite: string;
-  wageLevel: string | null;
-  prevailingWage: string | null;
-  actualWage: string | null;
-  postingStartDate: string | null;
-  postingEndDate: string | null;
+interface PafFile extends PafValues {
+  id: string;
+  updatedAt: string;
+  employeeFirstName: string;
+  employeeLastName: string;
 }
 
 export default function AdminPafDetailPage() {
   const params = useParams<{ id: string }>();
-  const [file, setFile] = useState<PafFile | null>(null);
+  const url = `/api/paf/${params.id}`;
+  const { data, error, loading, reload } = useResource<{ file: PafFile }>(url);
+  const action = useAction();
+  const file = data?.file;
 
-  useEffect(() => {
-    fetch(`/api/paf/${params.id}`)
-      .then((res) => res.json())
-      .then((data) => setFile(data.file));
-  }, [params.id]);
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const body: Record<string, string> = {};
+    fd.forEach((v, k) => {
+      if (typeof v === 'string' && v.trim()) body[k] = v.trim();
+    });
+    const result = await action.run('save', url, { method: 'PATCH', body }, 'File updated.');
+    if (result.ok) reload();
+  }
 
-  if (!file) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  const back = { href: '/admin/paf', label: 'All public access files' };
+  if (loading && !data) return <Loading />;
+  if (!file)
+    return (
+      <>
+        <PageHeader back={back} title="Public access file" />
+        <Alert title="Couldn't load this file">{error}</Alert>
+      </>
+    );
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">LCA {file.lcaCaseNumber}</h1>
-      <dl className="mt-6 space-y-2 text-sm">
-        <div><dt className="inline font-medium">Filed: </dt><dd className="inline">{file.lcaFilingDate}</dd></div>
-        <div><dt className="inline font-medium">Worksite: </dt><dd className="inline">{file.worksite}</dd></div>
-        <div><dt className="inline font-medium">Wage level: </dt><dd className="inline">{file.wageLevel ?? '—'}</dd></div>
-        <div><dt className="inline font-medium">Prevailing wage: </dt><dd className="inline">{file.prevailingWage ?? '—'}</dd></div>
-        <div><dt className="inline font-medium">Actual wage: </dt><dd className="inline">{file.actualWage ?? '—'}</dd></div>
-        <div><dt className="inline font-medium">Posting period: </dt><dd className="inline">{file.postingStartDate ?? '—'} – {file.postingEndDate ?? '—'}</dd></div>
-      </dl>
-    </div>
+    <>
+      <PageHeader back={back} eyebrow={`LCA ${file.lcaCaseNumber}`} title={fullName(file.employeeFirstName, file.employeeLastName)} actions={<PostingChip start={file.postingStartDate} end={file.postingEndDate} />} />
+      <div className="grid gap-8">
+        <Panel title="Summary">
+          <DetailList
+            columns={3}
+            items={[
+              { label: 'Filed', value: <When iso={file.lcaFilingDate} /> },
+              { label: 'Wage level', value: file.wageLevel ? `Level ${file.wageLevel}` : null },
+              { label: 'Notice posted', value: file.postingStartDate ? <DateRange from={file.postingStartDate} to={file.postingEndDate} /> : null },
+              { label: 'Prevailing wage', value: file.prevailingWage ? `${formatMoney(file.prevailingWage)} / yr` : null },
+              { label: 'Actual wage', value: file.actualWage ? `${formatMoney(file.actualWage)} / yr` : null },
+              { label: 'Worksite', value: <span className="whitespace-pre-wrap">{file.worksite}</span> },
+            ]}
+          />
+        </Panel>
+        <Panel title="Edit">
+          <form key={file.updatedAt} onSubmit={save} noValidate className="grid gap-5">
+            <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={PAF_LABELS} />
+            <PafFields values={file} errors={action.fieldErrors} />
+            <div>
+              <Button type="submit" busy={action.busy === 'save'} busyLabel="Saving…">
+                Save changes
+              </Button>
+            </div>
+          </form>
+        </Panel>
+      </div>
+    </>
   );
 }

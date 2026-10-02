@@ -87,8 +87,35 @@ npm run db:push
 #      doesn't index automatically - flagged by Supabase's own performance
 #      advisor)
 #   3. supabase/storage-buckets.sql (creates the two private buckets)
+#   4. supabase/auth-profile-link.sql (links new Supabase logins to their
+#      employee record and adds `messages` to Realtime for live chat)
 npm run dev
 ```
+
+### Environment variables
+
+| Variable | What it's for |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser sign-in and live chat |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only: sending portal invites and sign-in links |
+| `DATABASE_URL` | Server only: Drizzle's direct Postgres connection |
+| `NEXT_PUBLIC_APP_URL` | The portal's own address (e.g. `https://portal.vachiservices.com`); invite links return here |
+| `NEXT_PUBLIC_WEBSITE_URL` | The "Website" link in the top bar (defaults to `https://vachiservices.com`) |
+
+### Supabase Auth settings for invites
+
+Before inviting real employees, in the Supabase dashboard under
+**Authentication**:
+
+1. **URL Configuration**: set Site URL to the portal address and add
+   `https://portal.vachiservices.com/auth/confirm` to the redirect allow-list.
+   (If it's missing, links fall back to the site root; the sign-in page
+   forwards them to `/auth/confirm` anyway, but set it properly.)
+2. **SMTP**: add a custom SMTP sender (e.g. Resend or Google Workspace).
+   Supabase's built-in mailer only delivers to the project's team members,
+   so "Email an invite" won't reach anyone else without it. Until then, use
+   "Create invite link instead" on the employee page and send the link
+   yourself.
 
 The project this was built against (`vrwpkgijaeppraokhiis`) has all three
 applied and verified via the Supabase connector's advisors: 21 tables, RLS
@@ -121,7 +148,7 @@ DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/vachi_test" npm run db:p
 DATABASE_URL="postgresql://<user>:<pass>@localhost:5432/vachi_test" npm test
 ```
 
-50 tests across 9 files cover every phase's admin and employee scenarios
+66 tests across 10 files cover every phase's admin and employee scenarios
 against a real Postgres database via the real Drizzle queries - not
 against a live Supabase project (Supabase Auth, Storage, and Dropbox Sign
 are mocked in `src/test/setup.ts`, since those need real network access
@@ -134,6 +161,20 @@ e-signature webhook's HMAC verification (including that a forged event is
 correctly ignored), and PDF generation. Not covered: anything requiring a
 real browser, real Supabase Auth session, or real third-party API call -
 see the README's closing section for what that leaves open.
+
+### Browser tests
+
+`e2e/flow.mjs` signs in as HR and as a brand-new employee and clicks
+through every workflow: adding an employee and inviting them, the invite
+link and password setup, timesheets (return, fix, approve), training,
+weekly summaries, reviews, payroll, green card, STEM OPT, H-1B public
+access files, Form I-9 with E-Verify, messages and notifications.
+`e2e/sweep.mjs` then opens every page for both roles at phone, tablet,
+laptop and wide sizes and reports sideways scrolling, content off screen,
+tap targets under 24px and console errors, saving screenshots to
+`e2e/sweep/`. Both expect a production build on port 3000 against a local
+Supabase stack (`supabase start`) with an admin login; pass it with
+`EMAIL=… PASS=… node e2e/flow.mjs`. They need `playwright` installed.
 
 ## Status
 

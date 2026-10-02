@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { employees, onboardingSessions } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 import { desc } from 'drizzle-orm';
+import { findEmployeeByEmail } from '@/lib/employees';
 
 const createSessionSchema = z.object({
   employeeEmail: z.string().email(),
@@ -45,21 +46,23 @@ export async function POST(request: NextRequest) {
   const { employeeEmail, firstName, lastName, employmentType, startDate, position, department, visaType } =
     body.data;
 
-  // employees.userId stays null until this person actually signs up and
-  // gets a Supabase Auth account + profile — matches how onboarding starts
-  // before the employee has ever logged in.
-  const [employee] = await db
-    .insert(employees)
-    .values({
-      firstName,
-      lastName,
-      email: employeeEmail,
-      visaType,
-      position,
-      department,
-      startDate,
-    })
-    .returning();
+  // Reuse the employee record if HR already added this person; otherwise create it.
+  // employees.userId stays null until they accept a portal invite (see /api/employees/[id]/invite).
+  const existing = await findEmployeeByEmail(employeeEmail);
+  const [employee] = existing
+    ? [existing]
+    : await db
+        .insert(employees)
+        .values({
+          firstName,
+          lastName,
+          email: employeeEmail.toLowerCase(),
+          visaType,
+          position,
+          department,
+          startDate,
+        })
+        .returning();
 
   const [session] = await db
     .insert(onboardingSessions)

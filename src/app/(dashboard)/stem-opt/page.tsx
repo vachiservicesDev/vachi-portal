@@ -1,10 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useResource } from '@/lib/client/api';
+import { statusOf } from '@/lib/status';
+import { DueChip } from '@/components/ui/DueChip';
+import { Alert, Chip, DateRange, DetailList, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface Plan {
   status: string;
   employerName: string;
+  trainingStartDate: string | null;
+  trainingEndDate: string | null;
+  i983SubmittedAt: string | null;
   selfEvaluationDueAt: string | null;
   selfEvaluationCompletedAt: string | null;
   finalEvaluationDueAt: string | null;
@@ -12,40 +18,48 @@ interface Plan {
 }
 
 export default function StemOptPage() {
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/stem-opt/me')
-      .then((res) => res.json())
-      .then((data) => {
-        setPlan(data.plan);
-        setLoading(false);
-      });
-  }, []);
-
-  if (loading) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  const { data, error, loading } = useResource<{ plan: Plan | null }>('/api/stem-opt/me');
+  const plan = data?.plan;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">My STEM OPT Training Plan</h1>
-      {!plan ? (
-        <p className="mt-4 text-sm text-gray-500">No STEM OPT plan on file.</p>
+    <>
+      <PageHeader eyebrow="Immigration" title="STEM OPT training plan" lead="Your Form I-983 plan and the two evaluations USCIS requires. HR will reach out before each one is due." />
+      {error && <Alert title="Couldn't load your plan">{error}</Alert>}
+      {loading && !data ? (
+        <Loading />
+      ) : !plan ? (
+        <EmptyState title="No STEM OPT plan on file">If you’re on STEM OPT and expected one, message HR.</EmptyState>
       ) : (
-        <div className="mt-6 space-y-3">
-          <p className="text-sm text-gray-500">
-            {plan.employerName} · status: {plan.status}
-          </p>
-          <div className="rounded-lg border border-gray-200 p-4 text-sm">
-            <p>12-month self-evaluation due: {plan.selfEvaluationDueAt}</p>
-            <p className="mt-1">{plan.selfEvaluationCompletedAt ? 'Completed ✓' : 'Not yet completed'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-4 text-sm">
-            <p>Final evaluation due: {plan.finalEvaluationDueAt}</p>
-            <p className="mt-1">{plan.finalEvaluationCompletedAt ? 'Completed ✓' : 'Not yet completed'}</p>
-          </div>
+        <div className="grid gap-8">
+          <Panel title="Your plan" actions={<Chip tone={statusOf('stemOpt', plan.status).tone}>{statusOf('stemOpt', plan.status).label}</Chip>}>
+            <DetailList
+              items={[
+                { label: 'Employer', value: plan.employerName },
+                { label: 'Training period', value: <DateRange from={plan.trainingStartDate} to={plan.trainingEndDate} /> },
+                { label: 'I-983 submitted', value: plan.i983SubmittedAt ? <When iso={plan.i983SubmittedAt} /> : 'Not recorded yet' },
+              ]}
+            />
+          </Panel>
+          <Panel title="Evaluations">
+            <ul className="grid gap-3">
+              {[
+                { title: '12-month self-evaluation', due: plan.selfEvaluationDueAt, done: plan.selfEvaluationCompletedAt },
+                { title: 'Final evaluation', due: plan.finalEvaluationDueAt, done: plan.finalEvaluationCompletedAt },
+              ].map((ev) => (
+                <li key={ev.title} className="flex flex-col gap-2 rounded-lg border border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-ink">{ev.title}</p>
+                    <p className="text-sm text-muted">
+                      Due <When iso={ev.due} />
+                    </p>
+                  </div>
+                  <DueChip due={ev.due} done={ev.done} />
+                </li>
+              ))}
+            </ul>
+          </Panel>
         </div>
       )}
-    </div>
+    </>
   );
 }

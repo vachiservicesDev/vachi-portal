@@ -1,7 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { formValues, useAction, useResource } from '@/lib/client/api';
+import { TRAINING_PRIORITIES, TRAINING_TYPES, labelFrom } from '@/lib/status';
+import { Button, LinkButton } from '@/components/ui/Button';
+import { CheckboxField, FieldRow, SelectField, TextAreaField, TextField } from '@/components/ui/fields';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, Chip, DataTable, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface Task {
   id: string;
@@ -9,108 +14,106 @@ interface Task {
   type: string;
   priority: string;
   dueDate: string | null;
-  isMandatory: boolean;
+  isMandatory: boolean | null;
+  assignedCount: number;
+  completedCount: number;
 }
 
+const LABELS = {
+  title: 'Title',
+  description: 'Description',
+  type: 'Type',
+  priority: 'Priority',
+  dueDate: 'Due date',
+  estimatedDurationMinutes: 'Expected time',
+  contentUrl: 'Link to material',
+};
+
 export default function AdminTrainingPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error, loading, reload } = useResource<{ tasks: Task[] }>('/api/training/tasks');
+  const action = useAction();
+  const tasks = data?.tasks ?? [];
 
-  async function load() {
-    const res = await fetch('/api/training/tasks');
-    if (res.ok) setTasks((await res.json()).tasks);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+  async function create(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-    const res = await fetch('/api/training/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, isMandatory: data.isMandatory === 'on' }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).message ?? 'Failed to create task');
-      return;
+    const form = e.currentTarget;
+    const result = await action.run<{ task: Task }>('create', '/api/training/tasks', { body: formValues(form) }, 'Training created. Open it to assign people.');
+    if (result.ok) {
+      form.reset();
+      reload();
     }
-    formEl.reset();
-    setShowForm(false);
-    load();
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Training</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-        >
-          {showForm ? 'Cancel' : 'New task'}
-        </button>
-      </div>
-
-      {showForm && (
-        <form onSubmit={handleCreate} className="mt-6 space-y-3 rounded-lg border border-gray-200 p-6">
-          <input name="title" required placeholder="Title" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <textarea name="description" placeholder="Description (optional)" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <div className="grid grid-cols-2 gap-3">
-            <select name="type" className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="general">General</option>
-              <option value="compliance">Compliance</option>
-              <option value="safety">Safety</option>
-              <option value="technical">Technical</option>
-            </select>
-            <select name="priority" className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="critical">Critical</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input name="dueDate" type="date" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <input name="estimatedDurationMinutes" type="number" min="1" placeholder="Duration (min)" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <input name="contentUrl" type="url" placeholder="Content/materials URL (optional)" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="isMandatory" /> Mandatory
-          </label>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-            {busy ? 'Creating…' : 'Create task'}
-          </button>
-        </form>
-      )}
-
-      <ul className="mt-8 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {tasks.map((t) => (
-          <li key={t.id} className="flex items-center justify-between px-4 py-3">
+    <>
+      <PageHeader
+        eyebrow="Growth"
+        title="Training"
+        lead="Create training, then open it to assign employees and follow their progress."
+        actions={
+          <LinkButton href="/admin/training/summaries" variant="secondary">
+            Weekly summaries
+          </LinkButton>
+        }
+      />
+      <div className="grid gap-8">
+        <Panel title="Create training">
+          <form onSubmit={create} noValidate className="grid gap-5">
+            <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={LABELS} />
+            <TextField name="title" label="Title" required maxLength={255} errors={action.fieldErrors} />
+            <TextAreaField name="description" label="Description" rows={3} maxLength={10000} errors={action.fieldErrors} />
+            <FieldRow>
+              <SelectField name="type" label="Type" required options={TRAINING_TYPES} defaultValue="general" errors={action.fieldErrors} />
+              <SelectField name="priority" label="Priority" required options={TRAINING_PRIORITIES} defaultValue="medium" errors={action.fieldErrors} />
+            </FieldRow>
+            <FieldRow>
+              <TextField name="dueDate" label="Due date" type="date" errors={action.fieldErrors} />
+              <TextField name="estimatedDurationMinutes" label="Expected time (minutes)" type="number" inputMode="numeric" min={1} errors={action.fieldErrors} />
+            </FieldRow>
+            <TextField name="contentUrl" label="Link to material" type="url" placeholder="https://" errors={action.fieldErrors} hint="A doc, video or course people should open." />
+            <CheckboxField name="isMandatory" label="Required for everyone assigned" />
             <div>
-              <p className="font-medium">{t.title}</p>
-              <p className="text-sm text-gray-500">
-                {t.type} · {t.priority}
-                {t.isMandatory && ' · mandatory'}
-                {t.dueDate && ` · due ${t.dueDate}`}
-              </p>
+              <Button type="submit" busy={action.busy === 'create'} busyLabel="Creating…">
+                Create training
+              </Button>
             </div>
-            <Link href={`/admin/training/${t.id}`} className="text-sm text-indigo-600 hover:underline">
-              Manage →
-            </Link>
-          </li>
-        ))}
-        {tasks.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No training tasks yet.</li>}
-      </ul>
-    </div>
+          </form>
+        </Panel>
+
+        <section>
+          <h2 className="font-display mb-3 text-xl font-semibold text-ink">All training</h2>
+          {error && <Alert title="Couldn't load training">{error}</Alert>}
+          {loading && !data ? (
+            <Loading />
+          ) : tasks.length === 0 ? (
+            <EmptyState>No training yet. Create the first one above.</EmptyState>
+          ) : (
+            <DataTable
+              caption="Training"
+              rows={tasks}
+              rowKey={(t) => t.id}
+              columns={[
+                {
+                  header: 'Training',
+                  primary: true,
+                  cell: (t) => (
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Link href={`/admin/training/${t.id}`} className="font-semibold text-navy-700 hover:underline">
+                        {t.title}
+                      </Link>
+                      {t.isMandatory && <Chip tone="info">Required</Chip>}
+                    </span>
+                  ),
+                },
+                { header: 'Type', cell: (t) => labelFrom(TRAINING_TYPES, t.type) },
+                { header: 'Priority', cell: (t) => labelFrom(TRAINING_PRIORITIES, t.priority) },
+                { header: 'Due', cell: (t) => <When iso={t.dueDate} /> },
+                { header: 'Done', align: 'right', cell: (t) => `${t.completedCount} of ${t.assignedCount}` },
+              ]}
+            />
+          )}
+        </section>
+      </div>
+    </>
   );
 }

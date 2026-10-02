@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { formValues, useAction, useResource } from '@/lib/client/api';
+import { fullName, statusOf } from '@/lib/status';
+import { Button } from '@/components/ui/Button';
+import { FieldRow, SelectField, TextField } from '@/components/ui/fields';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, Chip, DataTable, DateRange, EmptyState, Loading, PageHeader, Panel, When, formatMoney } from '@/components/ui/ui';
 
 interface PayRun {
   id: string;
@@ -14,148 +20,211 @@ interface EmployeeOption {
   id: string;
   firstName: string;
   lastName: string;
+  status: string;
 }
 
 interface Stub {
   id: string;
+  employeeId: string;
   grossPay: string;
   netPay: string;
   employeeFirstName: string;
   employeeLastName: string;
 }
 
-export default function AdminPayrollPage() {
-  const [runs, setRuns] = useState<PayRun[]>([]);
-  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
-  const [selectedRun, setSelectedRun] = useState<string | null>(null);
-  const [stubs, setStubs] = useState<Stub[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const RUN_LABELS = { payPeriodStart: 'Period starts', payPeriodEnd: 'Period ends', payDate: 'Pay date' };
+const STUB_LABELS = { employeeId: 'Employee', grossPay: 'Gross pay', netPay: 'Net pay' };
 
-  async function loadRuns() {
-    const res = await fetch('/api/payroll/runs');
-    if (res.ok) setRuns((await res.json()).runs);
-  }
+function RunDetail({ run, employees, onChange }: { run: PayRun; employees: EmployeeOption[]; onChange: () => void }) {
+  const detail = useResource<{ run: PayRun; stubs: Stub[] }>(`/api/payroll/runs/${run.id}`);
+  const action = useAction();
+  const stubs = detail.data?.stubs ?? [];
+  const paid = new Set(stubs.map((s) => s.employeeId));
+  const available = employees.filter((e) => e.status !== 'inactive' && !paid.has(e.id));
+  const totals = stubs.reduce((acc, s) => ({ gross: acc.gross + Number(s.grossPay), net: acc.net + Number(s.netPay) }), { gross: 0, net: 0 });
 
-  async function loadRunDetail(id: string) {
-    const res = await fetch(`/api/payroll/runs/${id}`);
-    if (res.ok) setStubs((await res.json()).stubs);
-  }
+  const processed = run.status === 'processed';
 
-  useEffect(() => {
-    loadRuns();
-    fetch('/api/employees')
-      .then((res) => res.json())
-      .then((data) => setEmployees(data.employees));
-  }, []);
-
-  useEffect(() => {
-    if (selectedRun) loadRunDetail(selectedRun);
-  }, [selectedRun]);
-
-  async function createRun(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-    const res = await fetch('/api/payroll/runs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).message ?? 'Failed to create pay run');
-      return;
-    }
-    formEl.reset();
-    loadRuns();
+  async function setStatus(status: 'draft' | 'processed') {
+    const result = await action.run(status, `/api/payroll/runs/${run.id}`, { method: 'PATCH', body: { status } }, status === 'processed' ? 'Pay run marked processed. It is now locked.' : 'Pay run reopened.');
+    if (result.ok) onChange();
   }
 
   async function addStub(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!selectedRun) return;
-    setBusy(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-    const res = await fetch(`/api/payroll/runs/${selectedRun}/stubs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).message ?? 'Failed to add pay stub');
-      return;
+    const form = e.currentTarget;
+    const result = await action.run('stub', `/api/payroll/runs/${run.id}/stubs`, { body: formValues(form) }, 'Pay stub added. The employee can see it now.');
+    if (result.ok) {
+      form.reset();
+      detail.reload();
     }
-    formEl.reset();
-    loadRunDetail(selectedRun);
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Payroll</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        No payroll provider is wired up yet (vendor still open — see docs/PLAN.md). Record pay
-        runs here after processing payroll through whatever you currently use.
-      </p>
-
-      <form onSubmit={createRun} className="mt-6 space-y-3 rounded-lg border border-gray-200 p-4">
-        <div className="grid grid-cols-3 gap-3">
-          <input name="payPeriodStart" type="date" required placeholder="Period start" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <input name="payPeriodEnd" type="date" required placeholder="Period end" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <input name="payDate" type="date" required placeholder="Pay date" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
+    <Panel
+      id="run-detail"
+      title={
+        <>
+          Pay run for <DateRange from={run.payPeriodStart} to={run.payPeriodEnd} />
+        </>
+      }
+      actions={
+        processed ? (
+          <Button variant="secondary" size="sm" busy={action.busy === 'draft'} busyLabel="Reopening…" onClick={() => setStatus('draft')}>
+            Reopen
+          </Button>
+        ) : (
+          <Button size="sm" disabled={stubs.length === 0} busy={action.busy === 'processed'} busyLabel="Saving…" onClick={() => setStatus('processed')}>
+            Mark processed
+          </Button>
+        )
+      }
+      description={
+        <>
+          Paid on <When iso={run.payDate} />. {stubs.length} {stubs.length === 1 ? 'stub' : 'stubs'}, {formatMoney(totals.gross)} gross, {formatMoney(totals.net)} net.
+        </>
+      }
+    >
+      {detail.error && <Alert title="Couldn't load this pay run">{detail.error}</Alert>}
+      {processed && (
+        <div className="mb-5">
+          <Alert tone="info">This run is processed and locked. Reopen it to add or correct stubs.</Alert>
         </div>
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-          Create pay run
-        </button>
-      </form>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      )}
+      {detail.loading && !detail.data ? (
+        <Loading label="Loading pay stubs" />
+      ) : stubs.length === 0 ? (
+        <EmptyState>No pay stubs in this run yet. Add one below.</EmptyState>
+      ) : (
+        <DataTable
+          caption="Pay stubs in this run"
+          rows={stubs}
+          rowKey={(s) => s.id}
+          columns={[
+            { header: 'Employee', primary: true, cell: (s) => fullName(s.employeeFirstName, s.employeeLastName) },
+            { header: 'Gross pay', align: 'right', cell: (s) => formatMoney(s.grossPay) },
+            { header: 'Net pay', align: 'right', cell: (s) => formatMoney(s.netPay) },
+          ]}
+        />
+      )}
 
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {runs.map((r) => (
-          <li key={r.id}>
-            <button
-              onClick={() => setSelectedRun(r.id === selectedRun ? null : r.id)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-gray-50"
-            >
-              <span>
-                {r.payPeriodStart} – {r.payPeriodEnd} (pay date {r.payDate})
-              </span>
-              <span className="text-gray-500">{r.status}</span>
-            </button>
-            {selectedRun === r.id && (
-              <div className="border-t border-gray-100 bg-gray-50 p-4">
-                <form onSubmit={addStub} className="flex flex-wrap items-end gap-2">
-                  <select name="employeeId" required className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-                    <option value="">Employee…</option>
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {e.firstName} {e.lastName}
-                      </option>
-                    ))}
-                  </select>
-                  <input name="grossPay" type="number" step="0.01" min="0" required placeholder="Gross pay" className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm" />
-                  <input name="netPay" type="number" step="0.01" min="0" required placeholder="Net pay" className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm" />
-                  <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-                    Add stub
-                  </button>
-                </form>
-                <ul className="mt-3 space-y-1 text-sm">
-                  {stubs.map((s) => (
-                    <li key={s.id}>
-                      {s.employeeFirstName} {s.employeeLastName}: gross ${s.grossPay}, net ${s.netPay}
-                    </li>
-                  ))}
-                </ul>
+      <div className="mt-5">
+        <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={STUB_LABELS} />
+      </div>
+      {!processed && (
+        <form onSubmit={addStub} noValidate className="mt-8 grid gap-5 border-t border-line pt-6">
+          <h3 className="font-display text-lg font-semibold text-ink">Add a pay stub</h3>
+          {available.length === 0 ? (
+            <p className="text-ink-2">Every active employee already has a stub in this run.</p>
+          ) : (
+            <>
+              <SelectField
+                name="employeeId"
+                label="Employee"
+                required
+                placeholder="Choose an employee"
+                options={available.map((e) => ({ value: e.id, label: fullName(e.firstName, e.lastName) }))}
+                errors={action.fieldErrors}
+              />
+              <FieldRow>
+                <TextField name="grossPay" label="Gross pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} />
+                <TextField name="netPay" label="Net pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} hint="Can't be more than gross pay." />
+              </FieldRow>
+              <div>
+                <Button type="submit" busy={action.busy === 'stub'} busyLabel="Adding…">
+                  Add pay stub
+                </Button>
               </div>
-            )}
-          </li>
-        ))}
-        {runs.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No pay runs yet.</li>}
-      </ul>
-    </div>
+            </>
+          )}
+        </form>
+      )}
+    </Panel>
+  );
+}
+
+export default function AdminPayrollPage() {
+  const runs = useResource<{ runs: PayRun[] }>('/api/payroll/runs');
+  const people = useResource<{ employees: EmployeeOption[] }>('/api/employees');
+  const action = useAction();
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = runs.data?.runs ?? [];
+  const current = list.find((r) => r.id === selected) ?? null;
+
+  async function createRun(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const result = await action.run<{ run: PayRun }>('run', '/api/payroll/runs', { body: formValues(form) }, 'Pay run recorded. Add its pay stubs below.');
+    if (result.ok && result.data) {
+      form.reset();
+      await runs.reload();
+      setSelected(result.data.run.id);
+    }
+  }
+
+  function open(id: string) {
+    setSelected(id);
+    requestAnimationFrame(() => document.getElementById('run-detail')?.scrollIntoView({ block: 'start' }));
+  }
+
+  return (
+    <>
+      <PageHeader eyebrow="Work and pay" title="Payroll" lead="Record each pay run, then add a stub for every employee paid in it. Employees see their stubs under Pay stubs." />
+      <div className="grid gap-8">
+        <Panel title="Record a pay run">
+          <form onSubmit={createRun} noValidate className="grid gap-5">
+            <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={RUN_LABELS} />
+            <FieldRow cols={3}>
+              <TextField name="payPeriodStart" label="Period starts" type="date" required errors={action.fieldErrors} />
+              <TextField name="payPeriodEnd" label="Period ends" type="date" required errors={action.fieldErrors} />
+              <TextField name="payDate" label="Pay date" type="date" required errors={action.fieldErrors} />
+            </FieldRow>
+            <div>
+              <Button type="submit" busy={action.busy === 'run'} busyLabel="Recording…">
+                Record pay run
+              </Button>
+            </div>
+          </form>
+        </Panel>
+
+        <section>
+          <h2 className="font-display mb-3 text-xl font-semibold text-ink">Pay runs</h2>
+          {runs.error && <Alert title="Couldn't load pay runs">{runs.error}</Alert>}
+          {runs.loading && !runs.data ? (
+            <Loading label="Loading pay runs" />
+          ) : list.length === 0 ? (
+            <EmptyState>No pay runs yet. Record the first one above.</EmptyState>
+          ) : (
+            <DataTable
+              caption="Pay runs"
+              rows={list}
+              rowKey={(r) => r.id}
+              columns={[
+                { header: 'Pay period', primary: true, cell: (r) => <DateRange from={r.payPeriodStart} to={r.payPeriodEnd} /> },
+                { header: 'Pay date', cell: (r) => <When iso={r.payDate} /> },
+                {
+                  header: 'Status',
+                  cell: (r) => {
+                    const s = statusOf('payRun', r.status);
+                    return <Chip tone={s.tone}>{s.label}</Chip>;
+                  },
+                },
+                {
+                  header: 'Stubs',
+                  align: 'right',
+                  cell: (r) => (
+                    <Button variant={r.id === selected ? 'primary' : 'secondary'} size="sm" onClick={() => open(r.id)} aria-pressed={r.id === selected}>
+                      {r.id === selected ? 'Viewing' : 'View stubs'}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </section>
+
+        {current && <RunDetail key={current.id} run={current} employees={people.data?.employees ?? []} onChange={runs.reload} />}
+      </div>
+    </>
   );
 }

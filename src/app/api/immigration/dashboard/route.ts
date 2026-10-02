@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-import { isNotNull } from 'drizzle-orm';
+import { and, isNotNull, ne } from 'drizzle-orm';
 
 /**
  * The immigration-tracker "dashboard" isn't its own table - it's visa
@@ -25,12 +25,15 @@ export async function GET() {
       status: employees.status,
     })
     .from(employees)
-    .where(isNotNull(employees.visaExpiryDate));
+    .where(and(isNotNull(employees.visaExpiryDate), ne(employees.status, 'inactive')));
 
-  const now = new Date();
+  // Whole calendar days between today (US Eastern, where HR works) and the expiry date, so a
+  // visa that expires today shows 0 days all day rather than flipping to "expired" at 7 PM.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
   const withUrgency = rows.map((e) => {
     const daysUntilExpiry = e.visaExpiryDate
-      ? Math.floor((new Date(e.visaExpiryDate).getTime() - now.getTime()) / 86_400_000)
+      ? Math.round((Date.parse(`${e.visaExpiryDate}T00:00:00Z`) - todayMs) / 86_400_000)
       : null;
 
     let urgency: 'expired' | 'critical' | 'warning' | 'ok' = 'ok';

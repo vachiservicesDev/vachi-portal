@@ -3,3 +3,5 @@ node_modules/
 next-env.d.ts
 .env.local
 *.tsbuildinfo
+e2e/sweep/
+e2e/last-employee.json

@@ -1,7 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { formValues, useAction, useResource } from '@/lib/client/api';
+import { fullName } from '@/lib/status';
+import { PAF_LABELS, PafFields, PostingChip } from '@/components/paf/PafFields';
+import { Button } from '@/components/ui/Button';
+import { SelectField } from '@/components/ui/fields';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, DataTable, DateRange, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface PafFile {
   id: string;
@@ -17,98 +23,88 @@ interface EmployeeOption {
   id: string;
   firstName: string;
   lastName: string;
+  status: string;
+  visaType: string | null;
 }
 
 export default function AdminPafPage() {
-  const [files, setFiles] = useState<PafFile[]>([]);
-  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const files = useResource<{ files: PafFile[] }>('/api/paf');
+  const people = useResource<{ employees: EmployeeOption[] }>('/api/employees');
+  const action = useAction();
+  const list = files.data?.files ?? [];
+  const employees = (people.data?.employees ?? [])
+    .filter((e) => e.status !== 'inactive')
+    .sort((a, b) => Number(b.visaType === 'H1B') - Number(a.visaType === 'H1B'));
 
-  async function load() {
-    const [filesRes, employeesRes] = await Promise.all([
-      fetch('/api/paf'),
-      fetch('/api/employees'),
-    ]);
-    if (filesRes.ok) setFiles((await filesRes.json()).files);
-    if (employeesRes.ok) setEmployees((await employeesRes.json()).employees);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+  async function create(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-    const res = await fetch('/api/paf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).message ?? 'Failed to create PAF entry');
-      return;
+    const form = e.currentTarget;
+    const result = await action.run('create', '/api/paf', { body: formValues(form) }, 'Public access file created.');
+    if (result.ok) {
+      form.reset();
+      files.reload();
     }
-    formEl.reset();
-    load();
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">H-1B Public Access Files</h1>
-
-      <form onSubmit={handleCreate} className="mt-6 space-y-3 rounded-lg border border-gray-200 p-4">
-        <select name="employeeId" required className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-          <option value="">Select employee…</option>
-          {employees.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.firstName} {e.lastName}
-            </option>
-          ))}
-        </select>
-        <input name="lcaCaseNumber" required placeholder="LCA case number" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        <input name="worksite" required placeholder="Worksite address" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        <div className="grid grid-cols-2 gap-3">
-          <input name="lcaFilingDate" type="date" required className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <input name="wageLevel" placeholder="Wage level (I-IV)" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <input name="prevailingWage" type="number" step="0.01" placeholder="Prevailing wage" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <input name="actualWage" type="number" step="0.01" placeholder="Actual wage" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <input name="postingStartDate" type="date" placeholder="Posting start" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <input name="postingEndDate" type="date" placeholder="Posting end" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-          Add PAF entry
-        </button>
-      </form>
-
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {files.map((f) => (
-          <li key={f.id} className="flex items-center justify-between px-4 py-3">
+    <>
+      <PageHeader
+        eyebrow="Compliance"
+        title="H-1B public access files"
+        lead="One file per LCA. DOL requires the wage records and a notice posted for 10 business days before filing."
+      />
+      <div className="grid gap-8">
+        <Panel title="Add a file">
+          <form onSubmit={create} noValidate className="grid gap-5">
+            <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={PAF_LABELS} />
+            <SelectField
+              name="employeeId"
+              label="Employee"
+              required
+              placeholder="Choose an employee"
+              options={employees.map((e) => ({ value: e.id, label: `${fullName(e.firstName, e.lastName)}${e.visaType === 'H1B' ? ' (H-1B)' : ''}` }))}
+              errors={action.fieldErrors}
+            />
+            <PafFields errors={action.fieldErrors} />
             <div>
-              <p className="font-medium">
-                {f.employeeFirstName} {f.employeeLastName}
-              </p>
-              <p className="text-sm text-gray-500">
-                LCA {f.lcaCaseNumber} · filed {f.lcaFilingDate}
-              </p>
+              <Button type="submit" busy={action.busy === 'create'} busyLabel="Saving…">
+                Add file
+              </Button>
             </div>
-            <Link href={`/admin/paf/${f.id}`} className="text-sm text-indigo-600 hover:underline">
-              View →
-            </Link>
-          </li>
-        ))}
-        {files.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No PAF entries yet.</li>}
-      </ul>
-    </div>
+          </form>
+        </Panel>
+
+        <section>
+          <h2 className="font-display mb-3 text-xl font-semibold text-ink">Files</h2>
+          {files.error && <Alert title="Couldn't load files">{files.error}</Alert>}
+          {files.loading && !files.data ? (
+            <Loading />
+          ) : list.length === 0 ? (
+            <EmptyState>No public access files yet.</EmptyState>
+          ) : (
+            <DataTable
+              caption="H-1B public access files"
+              rows={list}
+              rowKey={(f) => f.id}
+              columns={[
+                {
+                  header: 'Employee',
+                  primary: true,
+                  cell: (f) => (
+                    <Link href={`/admin/paf/${f.id}`} className="font-semibold text-navy-700 hover:underline">
+                      {fullName(f.employeeFirstName, f.employeeLastName)}
+                    </Link>
+                  ),
+                },
+                { header: 'LCA case', cell: (f) => <span className="font-mono text-sm">{f.lcaCaseNumber}</span> },
+                { header: 'Filed', cell: (f) => <When iso={f.lcaFilingDate} /> },
+                { header: 'Notice posted', cell: (f) => (f.postingStartDate ? <DateRange from={f.postingStartDate} to={f.postingEndDate} /> : '—') },
+                { header: 'Posting', cell: (f) => <PostingChip start={f.postingStartDate} end={f.postingEndDate} /> },
+              ]}
+            />
+          )}
+        </section>
+      </div>
+    </>
   );
 }

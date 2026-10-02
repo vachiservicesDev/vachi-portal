@@ -1,13 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { formValues, useAction, useResource } from '@/lib/client/api';
+import { fullName, statusOf } from '@/lib/status';
+import { Button } from '@/components/ui/Button';
+import { DueChip } from '@/components/ui/DueChip';
+import { FieldRow, SelectField, TextField } from '@/components/ui/fields';
+import { FormStatus } from '@/components/ui/forms';
+import { Alert, Chip, DataTable, EmptyState, Loading, PageHeader, Panel } from '@/components/ui/ui';
 
 interface Plan {
   id: string;
+  employeeId: string;
   status: string;
+  employerName: string;
   selfEvaluationDueAt: string | null;
+  selfEvaluationCompletedAt: string | null;
   finalEvaluationDueAt: string | null;
+  finalEvaluationCompletedAt: string | null;
   employeeFirstName: string;
   employeeLastName: string;
 }
@@ -16,89 +26,112 @@ interface EmployeeOption {
   id: string;
   firstName: string;
   lastName: string;
+  status: string;
+  visaType: string | null;
 }
 
+const LABELS = { employeeId: 'Employee', employerName: 'Employer name', trainingStartDate: 'Training starts', trainingEndDate: 'Training ends', i983SubmittedAt: 'I-983 submitted' };
+
 export default function AdminStemOptPage() {
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const plans = useResource<{ plans: Plan[] }>('/api/stem-opt');
+  const people = useResource<{ employees: EmployeeOption[] }>('/api/employees');
+  const action = useAction();
+  const list = plans.data?.plans ?? [];
+  const withPlan = new Set(list.map((p) => p.employeeId));
+  const available = (people.data?.employees ?? [])
+    .filter((e) => e.status !== 'inactive' && !withPlan.has(e.id))
+    // STEM OPT employees first, since they're the ones who need a plan.
+    .sort((a, b) => Number(b.visaType === 'STEM_OPT') - Number(a.visaType === 'STEM_OPT'));
 
-  async function load() {
-    const [plansRes, employeesRes] = await Promise.all([
-      fetch('/api/stem-opt'),
-      fetch('/api/employees'),
-    ]);
-    if (plansRes.ok) setPlans((await plansRes.json()).plans);
-    if (employeesRes.ok) setEmployees((await employeesRes.json()).employees);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+  async function create(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-    const res = await fetch('/api/stem-opt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).message ?? 'Failed to create plan');
-      return;
+    const form = e.currentTarget;
+    const result = await action.run('create', '/api/stem-opt', { body: formValues(form) }, 'Plan created. The 12-month and final evaluation dates were set from the training dates.');
+    if (result.ok) {
+      form.reset();
+      plans.reload();
     }
-    formEl.reset();
-    load();
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">STEM OPT Training Plans (Form I-983)</h1>
+    <>
+      <PageHeader
+        eyebrow="Immigration"
+        title="STEM OPT training plans"
+        lead="Form I-983 plans and their two required evaluations: one at 12 months and a final one when training ends."
+      />
+      <div className="grid gap-8">
+        <Panel title="Create a plan">
+          <form onSubmit={create} noValidate className="grid gap-5">
+            <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={LABELS} />
+            {people.loading && !people.data ? (
+              <Loading label="Loading employees" />
+            ) : available.length === 0 ? (
+              <p className="text-ink-2">Every active employee already has a plan.</p>
+            ) : (
+              <>
+                <FieldRow>
+                  <SelectField
+                    name="employeeId"
+                    label="Employee"
+                    required
+                    placeholder="Choose an employee"
+                    options={available.map((e) => ({ value: e.id, label: `${fullName(e.firstName, e.lastName)}${e.visaType === 'STEM_OPT' ? ' (STEM OPT)' : ''}` }))}
+                    errors={action.fieldErrors}
+                  />
+                  <TextField name="employerName" label="Employer name" required defaultValue="Vachi Services LLC" maxLength={255} errors={action.fieldErrors} />
+                </FieldRow>
+                <FieldRow cols={3}>
+                  <TextField name="trainingStartDate" label="Training starts" type="date" required errors={action.fieldErrors} />
+                  <TextField name="trainingEndDate" label="Training ends" type="date" required errors={action.fieldErrors} hint="Up to 24 months after the start." />
+                  <TextField name="i983SubmittedAt" label="I-983 submitted" type="date" errors={action.fieldErrors} />
+                </FieldRow>
+                <div>
+                  <Button type="submit" busy={action.busy === 'create'} busyLabel="Creating…">
+                    Create plan
+                  </Button>
+                </div>
+              </>
+            )}
+          </form>
+        </Panel>
 
-      <form onSubmit={handleCreate} className="mt-6 space-y-3 rounded-lg border border-gray-200 p-4">
-        <select name="employeeId" required className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-          <option value="">Select employee…</option>
-          {employees.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.firstName} {e.lastName}
-            </option>
-          ))}
-        </select>
-        <input name="employerName" required placeholder="Employer name" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        <div className="grid grid-cols-2 gap-3">
-          <input name="trainingStartDate" type="date" required className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <input name="trainingEndDate" type="date" required className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-          Create plan
-        </button>
-      </form>
-
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {plans.map((p) => (
-          <li key={p.id} className="flex items-center justify-between px-4 py-3">
-            <div>
-              <p className="font-medium">
-                {p.employeeFirstName} {p.employeeLastName}
-              </p>
-              <p className="text-sm text-gray-500">
-                {p.status} · self-eval due {p.selfEvaluationDueAt} · final due {p.finalEvaluationDueAt}
-              </p>
-            </div>
-            <Link href={`/admin/stem-opt/${p.id}`} className="text-sm text-indigo-600 hover:underline">
-              Manage →
-            </Link>
-          </li>
-        ))}
-        {plans.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No STEM OPT plans yet.</li>}
-      </ul>
-    </div>
+        <section>
+          <h2 className="font-display mb-3 text-xl font-semibold text-ink">Plans</h2>
+          {plans.error && <Alert title="Couldn't load plans">{plans.error}</Alert>}
+          {plans.loading && !plans.data ? (
+            <Loading />
+          ) : list.length === 0 ? (
+            <EmptyState>No STEM OPT plans yet.</EmptyState>
+          ) : (
+            <DataTable
+              caption="STEM OPT training plans"
+              rows={list}
+              rowKey={(p) => p.id}
+              columns={[
+                {
+                  header: 'Employee',
+                  primary: true,
+                  cell: (p) => (
+                    <Link href={`/admin/stem-opt/${p.id}`} className="font-semibold text-navy-700 hover:underline">
+                      {fullName(p.employeeFirstName, p.employeeLastName)}
+                    </Link>
+                  ),
+                },
+                {
+                  header: 'Status',
+                  cell: (p) => {
+                    const s = statusOf('stemOpt', p.status);
+                    return <Chip tone={s.tone}>{s.label}</Chip>;
+                  },
+                },
+                { header: '12-month evaluation', cell: (p) => <DueChip due={p.selfEvaluationDueAt} done={p.selfEvaluationCompletedAt} /> },
+                { header: 'Final evaluation', cell: (p) => <DueChip due={p.finalEvaluationDueAt} done={p.finalEvaluationCompletedAt} /> },
+              ]}
+            />
+          )}
+        </section>
+      </div>
+    </>
   );
 }

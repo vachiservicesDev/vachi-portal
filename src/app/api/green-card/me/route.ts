@@ -1,3 +1,4 @@
+import { ownEmployee } from '@/lib/employees';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, greenCardCases } from '@/db/schema';
@@ -11,12 +12,13 @@ export async function GET() {
   const [employee] = await db
     .select()
     .from(employees)
-    .where(eq(employees.email, gate.profile.email))
+    .where(ownEmployee(gate.profile))
     .limit(1);
   if (!employee) return NextResponse.json({ case: null });
 
+  // Notes are HR-only, so they're left out.
   const [gcCase] = await db
-    .select()
+    .select({ stage: greenCardCases.stage, priorityDate: greenCardCases.priorityDate, stageUpdatedAt: greenCardCases.stageUpdatedAt })
     .from(greenCardCases)
     .where(eq(greenCardCases.employeeId, employee.id))
     .limit(1);

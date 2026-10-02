@@ -1,55 +1,70 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useResource } from '@/lib/client/api';
+import { statusOf } from '@/lib/status';
+import { Alert, Chip, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface OnboardingDocument {
   id: string;
   documentType: string;
   status: string;
+  signedAt: string | null;
+}
+
+function docName(type: string) {
+  return type === 'onboarding_acknowledgment' ? 'Onboarding acknowledgment' : type.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
 export default function EmployeeOnboardingPage() {
-  const [session, setSession] = useState<{ status: string } | null>(null);
-  const [documents, setDocuments] = useState<OnboardingDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, error, loading } = useResource<{ session: { status: string } | null; documents: OnboardingDocument[] }>('/api/onboarding/me');
 
-  useEffect(() => {
-    fetch('/api/onboarding/me')
-      .then((res) => res.json())
-      .then((data) => {
-        setSession(data.session);
-        setDocuments(data.documents ?? []);
-        setLoading(false);
-      });
-  }, []);
+  if (loading && !data) return <Loading />;
 
-  if (loading) return <p className="p-12 text-sm text-gray-500">Loading…</p>;
+  const session = data?.session;
+  const documents = data?.documents ?? [];
+  const st = session ? statusOf('onboarding', session.status) : null;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Onboarding</h1>
-
+    <>
+      <PageHeader
+        eyebrow="Getting started"
+        title="Onboarding"
+        lead="Your welcome paperwork. Each document arrives by email from Dropbox Sign; sign it there and it shows as signed here."
+        actions={st && <Chip tone={st.tone}>{st.label}</Chip>}
+      />
+      {error && <Alert title="Couldn't load your onboarding">{error}</Alert>}
       {!session ? (
-        <p className="mt-4 text-sm text-gray-500">No onboarding has been started for you yet.</p>
+        <EmptyState title="Nothing to sign yet">HR hasn&apos;t started your onboarding. You&apos;ll get an email when there&apos;s something to sign.</EmptyState>
+      ) : documents.length === 0 ? (
+        <EmptyState title="Documents on the way">HR is preparing your documents. Check back soon.</EmptyState>
       ) : (
-        <>
-          <p className="mt-2 text-sm text-gray-500">Status: {session.status}</p>
-          <ul className="mt-6 space-y-3">
-            {documents.map((doc) => (
-              <li key={doc.id} className="rounded-lg border border-gray-200 p-4">
-                <p className="font-medium">{doc.documentType}</p>
-                <p className="text-sm text-gray-500">
-                  {doc.status === 'sent_for_signature'
-                    ? 'Check your email for a signing request.'
-                    : doc.status === 'signed'
-                      ? 'Signed ✓'
-                      : doc.status}
-                </p>
-              </li>
-            ))}
+        <Panel title="Your documents">
+          <ul className="divide-y divide-line">
+            {documents.map((doc) => {
+              const ds = statusOf('onboardingDocument', doc.status);
+              return (
+                <li key={doc.id} className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-ink">{docName(doc.documentType)}</p>
+                    <p className="text-sm text-muted">
+                      {doc.status === 'sent_for_signature' ? (
+                        'Check your email for a signing request from Dropbox Sign.'
+                      ) : doc.status === 'signed' ? (
+                        <>
+                          Signed <When iso={doc.signedAt} />
+                        </>
+                      ) : (
+                        'HR will send this for your signature.'
+                      )}
+                    </p>
+                  </div>
+                  <Chip tone={ds.tone}>{doc.status === 'generated' ? 'Being prepared' : ds.label}</Chip>
+                </li>
+              );
+            })}
           </ul>
-        </>
+        </Panel>
       )}
-    </div>
+    </>
   );
 }

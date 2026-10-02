@@ -1,7 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { formValues, useAction, useResource } from '@/lib/client/api';
+import { statusOf } from '@/lib/status';
+import { Button } from '@/components/ui/Button';
+import { FormStatus } from '@/components/ui/forms';
+import { TextField } from '@/components/ui/fields';
+import { Alert, Chip, DataTable, DateRange, EmptyState, Loading, PageHeader, Panel, formatHours } from '@/components/ui/ui';
 
 interface Timesheet {
   id: string;
@@ -11,77 +17,80 @@ interface Timesheet {
   status: string;
 }
 
+/** Monday and Sunday of the current week, as YYYY-MM-DD in US Eastern time. */
+function thisWeek() {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+  const d = new Date(`${today}T12:00:00Z`);
+  const monday = new Date(d);
+  monday.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return { start: monday.toISOString().slice(0, 10), end: sunday.toISOString().slice(0, 10) };
+}
+
 export default function TimesheetsPage() {
-  const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function load() {
-    const res = await fetch('/api/timesheets');
-    if (res.ok) setTimesheets((await res.json()).timesheets);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
+  const router = useRouter();
+  const { data, error, loading } = useResource<{ timesheets: Timesheet[] }>('/api/timesheets');
+  const action = useAction();
+  const week = thisWeek();
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-    const res = await fetch('/api/timesheets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).message ?? 'Failed to create timesheet');
-      return;
-    }
-    formEl.reset();
-    load();
+    const result = await action.run<{ timesheet: Timesheet }>('create', '/api/timesheets', { body: formValues(e.currentTarget) });
+    if (result.ok && result.data) router.push(`/timesheets/${result.data.timesheet.id}`);
   }
 
+  const rows = data?.timesheets ?? [];
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">My Timesheets</h1>
-
-      <form onSubmit={handleCreate} className="mt-6 flex items-end gap-3 rounded-lg border border-gray-200 p-4">
-        <div>
-          <label className="block text-xs text-gray-500">Week starting</label>
-          <input name="weekStarting" type="date" required className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500">Week ending</label>
-          <input name="weekEnding" type="date" required className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </div>
-        <button type="submit" disabled={busy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-          New timesheet
-        </button>
-      </form>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-
-      <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-        {timesheets.map((t) => (
-          <li key={t.id} className="flex items-center justify-between px-4 py-3">
-            <span>
-              {t.weekStarting} – {t.weekEnding}
-            </span>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500">
-                {t.totalHours}h · {t.status}
-              </span>
-              <Link href={`/timesheets/${t.id}`} className="text-sm text-indigo-600 hover:underline">
-                Open →
-              </Link>
+    <>
+      <PageHeader eyebrow="Work and pay" title="Timesheets" lead="Log the hours you work each week, then submit the week for approval." />
+      <div className="grid gap-6">
+        <Panel title="Start a timesheet" description="Weeks run Monday to Sunday. Change the dates if your pay period differs.">
+          <form onSubmit={handleCreate} className="grid gap-4">
+            <FormStatus error={action.error} fieldErrors={action.fieldErrors} labels={{ weekStarting: 'Week starting', weekEnding: 'Week ending' }} />
+            <div className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <TextField name="weekStarting" label="Week starting" type="date" required hideOptional defaultValue={week.start} errors={action.fieldErrors} />
+              <TextField name="weekEnding" label="Week ending" type="date" required hideOptional defaultValue={week.end} errors={action.fieldErrors} />
+              <Button type="submit" busy={action.busy === 'create'} busyLabel="Creating" className="sm:mb-0">
+                Start timesheet
+              </Button>
             </div>
-          </li>
-        ))}
-        {timesheets.length === 0 && <li className="px-4 py-3 text-sm text-gray-500">No timesheets yet.</li>}
-      </ul>
-    </div>
+          </form>
+        </Panel>
+
+        {error && <Alert title="Couldn't load your timesheets">{error}</Alert>}
+        {loading && !data ? (
+          <Loading />
+        ) : rows.length === 0 ? (
+          <EmptyState title="No timesheets yet">Start this week&apos;s timesheet above.</EmptyState>
+        ) : (
+          <DataTable
+            caption="Your timesheets"
+            rows={rows}
+            rowKey={(t) => t.id}
+            columns={[
+              {
+                header: 'Week',
+                primary: true,
+                cell: (t) => (
+                  <Link href={`/timesheets/${t.id}`} className="font-semibold text-navy-700 hover:underline">
+                    <DateRange from={t.weekStarting} to={t.weekEnding} />
+                  </Link>
+                ),
+              },
+              { header: 'Hours', align: 'right', cell: (t) => formatHours(t.totalHours) },
+              {
+                header: 'Status',
+                cell: (t) => {
+                  const s = statusOf('timesheet', t.status);
+                  return <Chip tone={s.tone}>{s.label}</Chip>;
+                },
+              },
+            ]}
+          />
+        )}
+      </div>
+    </>
   );
 }

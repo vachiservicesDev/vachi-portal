@@ -1,129 +1,134 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useState } from 'react';
+import { formValues, useAction, useResource } from '@/lib/client/api';
+import { statusOf, VISA_TYPES } from '@/lib/status';
+import { Button } from '@/components/ui/Button';
+import { FormStatus } from '@/components/ui/forms';
+import { FieldRow, SelectField, TextField } from '@/components/ui/fields';
+import { Alert, Chip, DataTable, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface OnboardingSession {
   id: string;
   employmentType: 'w2' | '1099';
   status: string;
   createdAt: string;
-  formData: { employeeName?: string };
+  formData: { employeeName?: string; startDate?: string; position?: string };
 }
 
+const LABELS = {
+  firstName: 'First name',
+  lastName: 'Last name',
+  employeeEmail: 'Employee email',
+  employmentType: 'Employment type',
+  startDate: 'Start date',
+};
+
 export default function AdminOnboardingPage() {
-  const [sessions, setSessions] = useState<OnboardingSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error, loading, reload } = useResource<{ sessions: OnboardingSession[] }>('/api/onboarding/sessions');
   const [showForm, setShowForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function loadSessions() {
-    setLoading(true);
-    const res = await fetch('/api/onboarding/sessions');
-    if (res.ok) {
-      const data = await res.json();
-      setSessions(data.sessions);
-    } else {
-      setError('Failed to load onboarding sessions');
-    }
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    loadSessions();
-  }, []);
+  const action = useAction();
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    const formEl = e.currentTarget;
-    const data = Object.fromEntries(new FormData(formEl).entries());
-
-    const res = await fetch('/api/onboarding/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-
-    setSubmitting(false);
-
-    if (!res.ok) {
-      const body = await res.json();
-      setError(body.message ?? 'Failed to create onboarding session');
-      return;
+    const form = e.currentTarget;
+    const result = await action.run('create', '/api/onboarding/sessions', { body: formValues(form) }, 'Onboarding started. Open it to generate and send the documents.');
+    if (result.ok) {
+      form.reset();
+      setShowForm(false);
+      await reload();
     }
-
-    formEl.reset();
-    setShowForm(false);
-    loadSessions();
   }
 
+  const sessions = data?.sessions ?? [];
+
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Onboarding</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-        >
-          {showForm ? 'Cancel' : 'New onboarding'}
-        </button>
-      </div>
+    <>
+      <PageHeader
+        eyebrow="People"
+        title="Onboarding"
+        lead="Start onboarding for a new hire, generate their documents and send them for e-signature."
+        actions={
+          <Button variant={showForm ? 'secondary' : 'primary'} onClick={() => (setShowForm((v) => !v), action.clear())} aria-expanded={showForm} aria-controls="new-onboarding">
+            {showForm ? 'Cancel' : 'Start onboarding'}
+          </Button>
+        }
+      />
 
-      {showForm && (
-        <form onSubmit={handleCreate} className="mt-6 space-y-3 rounded-lg border border-gray-200 p-6">
-          <div className="grid grid-cols-2 gap-3">
-            <input name="firstName" required placeholder="First name" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <input name="lastName" required placeholder="Last name" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <input name="employeeEmail" type="email" required placeholder="Employee email" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          <div className="grid grid-cols-2 gap-3">
-            <select name="employmentType" required className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-              <option value="w2">W-2</option>
-              <option value="1099">1099</option>
-            </select>
-            <input name="startDate" type="date" required className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input name="position" placeholder="Position (optional)" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <input name="department" placeholder="Department (optional)" className="rounded-md border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-          >
-            {submitting ? 'Creating…' : 'Create'}
-          </button>
-        </form>
-      )}
+      <div className="grid gap-6">
+        {!showForm && action.success && <FormStatus success={action.success} />}
+        {showForm && (
+          <Panel id="new-onboarding" title="New hire" description="If the employee already exists, their record is reused.">
+            <form onSubmit={handleCreate} className="grid gap-5">
+              <FormStatus error={action.error} fieldErrors={action.fieldErrors} labels={LABELS} />
+              <FieldRow>
+                <TextField name="firstName" label="First name" required errors={action.fieldErrors} />
+                <TextField name="lastName" label="Last name" required errors={action.fieldErrors} />
+              </FieldRow>
+              <FieldRow>
+                <TextField name="employeeEmail" label="Employee email" type="email" inputMode="email" required errors={action.fieldErrors} />
+                <TextField name="startDate" label="Start date" type="date" required errors={action.fieldErrors} />
+              </FieldRow>
+              <FieldRow cols={3}>
+                <SelectField
+                  name="employmentType"
+                  label="Employment type"
+                  required
+                  defaultValue="w2"
+                  errors={action.fieldErrors}
+                  options={[
+                    { value: 'w2', label: 'W-2 employee' },
+                    { value: '1099', label: '1099 contractor' },
+                  ]}
+                />
+                <SelectField name="visaType" label="Work authorization" defaultValue="Other" errors={action.fieldErrors} options={VISA_TYPES} />
+                <TextField name="position" label="Position" errors={action.fieldErrors} />
+              </FieldRow>
+              <TextField name="department" label="Department" className="sm:max-w-sm" errors={action.fieldErrors} />
+              <div className="flex justify-end border-t border-line pt-5">
+                <Button type="submit" busy={action.busy === 'create'} busyLabel="Starting">
+                  Start onboarding
+                </Button>
+              </div>
+            </form>
+          </Panel>
+        )}
 
-      <div className="mt-8">
-        {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+        {error && <Alert title="Couldn't load onboarding">{error}</Alert>}
+        {loading && !data ? (
+          <Loading />
         ) : sessions.length === 0 ? (
-          <p className="text-sm text-gray-500">No onboarding sessions yet.</p>
+          <EmptyState title="No onboarding yet">Start onboarding for your next hire to generate their documents.</EmptyState>
         ) : (
-          <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200">
-            {sessions.map((s) => (
-              <li key={s.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="font-medium">{s.formData?.employeeName ?? 'Unknown'}</p>
-                  <p className="text-sm text-gray-500">
-                    {s.employmentType.toUpperCase()} · {s.status}
-                  </p>
-                </div>
-                <Link href={`/admin/onboarding/${s.id}`} className="text-sm text-indigo-600 hover:underline">
-                  View →
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <DataTable
+            caption="Onboarding sessions"
+            rows={sessions}
+            rowKey={(s) => s.id}
+            columns={[
+              {
+                header: 'Employee',
+                primary: true,
+                cell: (s) => (
+                  <Link href={`/admin/onboarding/${s.id}`} className="font-semibold text-navy-700 hover:underline">
+                    {s.formData?.employeeName ?? 'Unnamed'}
+                  </Link>
+                ),
+              },
+              { header: 'Type', cell: (s) => (s.employmentType === 'w2' ? 'W-2' : '1099') },
+              { header: 'Start date', cell: (s) => <When iso={s.formData?.startDate} /> },
+              { header: 'Started', cell: (s) => <When iso={s.createdAt} /> },
+              {
+                header: 'Status',
+                cell: (s) => {
+                  const st = statusOf('onboarding', s.status);
+                  return <Chip tone={st.tone}>{st.label}</Chip>;
+                },
+              },
+            ]}
+          />
         )}
       </div>
-    </div>
+    </>
   );
 }

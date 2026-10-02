@@ -1,8 +1,10 @@
+import { ownsEmployee } from '@/lib/employees';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, timesheetEntries, timesheets } from '@/db/schema';
 import { requireActiveUser } from '@/lib/auth/requireAdmin';
 import { eq } from 'drizzle-orm';
+import { EDITABLE } from '../../shared';
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   const gate = await requireActiveUser();
@@ -10,13 +12,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
   const [timesheet] = await db.select().from(timesheets).where(eq(timesheets.id, params.id)).limit(1);
   if (!timesheet) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  if (!EDITABLE.includes(timesheet.status)) {
+    return NextResponse.json({ message: 'This timesheet has already been submitted.' }, { status: 409 });
+  }
 
   const [employee] = await db
     .select()
     .from(employees)
     .where(eq(employees.id, timesheet.employeeId))
     .limit(1);
-  if (!employee || employee.email !== gate.profile.email) {
+  if (!ownsEmployee(employee, gate.profile)) {
     return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   }
 
@@ -43,6 +48,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       overtimeHours: String(overtimeHours),
       status: 'submitted',
       submittedAt: new Date(),
+      rejectionReason: null,
       updatedAt: new Date(),
     })
     .where(eq(timesheets.id, params.id))

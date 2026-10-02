@@ -21,6 +21,15 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
   const [before] = await db.select().from(timesheets).where(eq(timesheets.id, params.id)).limit(1);
   if (!before) return NextResponse.json({ message: 'Not found' }, { status: 404 });
+  if (before.status !== 'submitted') {
+    return NextResponse.json({ message: 'Only submitted timesheets can be approved or returned.' }, { status: 409 });
+  }
+  if (body.data.decision === 'rejected' && !body.data.rejectionReason?.trim()) {
+    return NextResponse.json(
+      { message: 'Say why you are returning it, so the employee knows what to fix.', errors: { fieldErrors: { rejectionReason: ['Enter a reason.'] } } },
+      { status: 400 },
+    );
+  }
 
   const [updated] = await db
     .update(timesheets)

@@ -12,7 +12,8 @@ export async function GET() {
     .select()
     .from(notifications)
     .where(eq(notifications.userId, gate.user.id))
-    .orderBy(desc(notifications.createdAt));
+    .orderBy(desc(notifications.createdAt))
+    .limit(200);
 
   return NextResponse.json({ notifications: rows });
 }

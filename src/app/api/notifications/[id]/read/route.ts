@@ -3,11 +3,13 @@ import { db } from '@/db';
 import { notifications } from '@/db/schema';
 import { requireActiveUser } from '@/lib/auth/requireAdmin';
 import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   const gate = await requireActiveUser();
   if (!gate.ok) return NextResponse.json({ message: gate.message }, { status: gate.status });
 
+  if (!z.string().uuid().safeParse(params.id).success) return NextResponse.json({ message: 'Not found' }, { status: 404 });
   const [updated] = await db
     .update(notifications)
     .set({ status: 'read', readAt: new Date() })
