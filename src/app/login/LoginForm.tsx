@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/fields';
@@ -17,6 +17,23 @@ export function LoginForm({ next }: { next: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
+
+  // If Supabase's redirect allow-list doesn't include /auth/confirm, invite and reset links fall
+  // back to the site root and end up here with the session in the URL. Finish the job instead
+  // of leaving the person on a sign-in form they have no password for.
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const search = new URLSearchParams(window.location.search);
+    const type = hash.get('type') ?? search.get('type');
+    const setPassword = type === 'invite' || type === 'recovery';
+    const target = encodeURIComponent(setPassword ? '/set-password' : next ?? '/');
+    if (hash.get('access_token') || hash.get('error')) {
+      window.location.replace(`/auth/confirm?next=${target}${window.location.hash}`);
+    } else if (search.get('code') || search.get('token_hash')) {
+      search.set('next', setPassword ? '/set-password' : next ?? '/');
+      window.location.replace(`/auth/confirm?${search.toString()}`);
+    }
+  }, [next]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

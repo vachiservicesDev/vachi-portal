@@ -10,6 +10,7 @@ import { POST as submitTimesheet } from '@/app/api/timesheets/[id]/submit/route'
 import { PATCH as reviewTimesheet } from '@/app/api/timesheets/[id]/review/route';
 import { POST as createPayRun } from '@/app/api/payroll/runs/route';
 import { POST as addStub } from '@/app/api/payroll/runs/[id]/stubs/route';
+import { PATCH as updatePayRun } from '@/app/api/payroll/runs/[id]/route';
 import { POST as createGreenCard } from '@/app/api/green-card/route';
 import { PATCH as updateGreenCard } from '@/app/api/green-card/[id]/route';
 import { GET as myGreenCard } from '@/app/api/green-card/me/route';
@@ -158,6 +159,16 @@ describe('Portal rules added in the design-system pass', () => {
       expect(ok.status).toBe(201);
       const dup = await addStub(jsonRequest({ employeeId: employee.id, grossPay: '4000', netPay: '3100' }), { params: { id: run.id } });
       expect(dup.status).toBe(409);
+
+      const dupRun = await createPayRun(jsonRequest({ payPeriodStart: '2026-02-01', payPeriodEnd: '2026-02-15', payDate: '2026-02-21' }));
+      expect(dupRun.status).toBe(409);
+
+      // Processing locks the run; reopening unlocks it.
+      expect((await updatePayRun(jsonRequest({ status: 'processed' }), { params: { id: run.id } })).status).toBe(200);
+      const { employee: second } = await seedEmployee();
+      expect((await addStub(jsonRequest({ employeeId: second.id, grossPay: '10', netPay: '9' }), { params: { id: run.id } })).status).toBe(409);
+      await updatePayRun(jsonRequest({ status: 'draft' }), { params: { id: run.id } });
+      expect((await addStub(jsonRequest({ employeeId: second.id, grossPay: '10', netPay: '9' }), { params: { id: run.id } })).status).toBe(201);
 
       const missingRun = await addStub(jsonRequest({ employeeId: employee.id, grossPay: '1', netPay: '1' }), { params: { id: '00000000-0000-4000-8000-000000000000' } });
       expect(missingRun.status).toBe(404);

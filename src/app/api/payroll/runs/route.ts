@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { payRuns } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-import { desc } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 const day = (msg: string) => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, msg);
 const createSchema = z
@@ -28,6 +28,18 @@ export async function POST(request: NextRequest) {
 
   const body = createSchema.safeParse(await request.json());
   if (!body.success) return NextResponse.json({ message: 'Invalid input', errors: body.error.flatten() }, { status: 400 });
+
+  const [existing] = await db
+    .select({ id: payRuns.id })
+    .from(payRuns)
+    .where(and(eq(payRuns.payPeriodStart, body.data.payPeriodStart), eq(payRuns.payPeriodEnd, body.data.payPeriodEnd)))
+    .limit(1);
+  if (existing) {
+    return NextResponse.json(
+      { message: 'A pay run for this period already exists. Add stubs to that one instead.', errors: { fieldErrors: { payPeriodStart: ['A run for this period already exists.'] } } },
+      { status: 409 },
+    );
+  }
 
   const [run] = await db
     .insert(payRuns)

@@ -21,9 +21,9 @@ export function EntryList({ entries, onDelete, busy }: { entries: Entry[]; onDel
             <span className="w-28 shrink-0 font-medium text-ink">
               <When iso={e.date} />
             </span>
-            <span className="min-w-0 flex-1 text-ink-2">{e.taskDescription || <span className="text-muted">No description</span>}</span>
+            <span className="order-last min-w-0 basis-full text-sm text-ink-2 sm:order-none sm:basis-auto sm:flex-1 sm:text-base">{e.taskDescription || <span className="text-muted">No description</span>}</span>
             {e.isOvertime && <Chip tone="warning">Overtime</Chip>}
-            <span className="w-16 text-right font-medium tabular-nums text-ink">{formatHours(e.hours)}</span>
+            <span className="ml-auto w-16 text-right font-medium tabular-nums text-ink sm:ml-0">{formatHours(e.hours)}</span>
             {onDelete && (
               <Button variant="ghost" size="sm" onClick={() => onDelete(e.id)} busy={busy === e.id} busyLabel="Removing" aria-label={`Remove entry for ${e.date}`}>
                 Remove

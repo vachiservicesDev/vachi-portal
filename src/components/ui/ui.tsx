@@ -253,7 +253,7 @@ export function DataTable<T>({ columns, rows, rowKey, caption }: { columns: Colu
           {rows.map((row) => (
             <tr key={rowKey(row)} className="align-middle transition-colors hover:bg-subtle/60">
               {columns.map((c) => (
-                <td key={c.header} className={`px-4 py-3.5 text-[0.9375rem] text-ink-2 ${c.primary ? 'font-medium text-ink' : ''} ${c.align === 'right' ? 'text-right' : ''} ${c.className ?? ''}`}>
+                <td key={c.header} className={`px-4 py-3.5 text-[0.9375rem] text-ink-2 [&_a]:inline-block [&_a]:py-0.5 ${c.primary ? 'font-medium text-ink' : ''} ${c.align === 'right' ? 'text-right' : ''} ${c.className ?? ''}`}>
                   {c.cell(row)}
                 </td>
               ))}
@@ -263,7 +263,7 @@ export function DataTable<T>({ columns, rows, rowKey, caption }: { columns: Colu
       </table>
       <ul className="divide-y divide-line md:hidden" aria-label={caption}>
         {rows.map((row) => (
-          <li key={rowKey(row)} className="p-4">
+          <li key={rowKey(row)} className="p-4 [&_a]:inline-block [&_a]:py-0.5">
             {primary && <div className="font-medium text-ink">{primary.cell(row)}</div>}
             <dl className={`grid gap-2 ${primary ? 'mt-3' : ''}`}>
               {rest.map((c) => (
@@ -282,7 +282,7 @@ export function DataTable<T>({ columns, rows, rowKey, caption }: { columns: Colu
 
 export function TextLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="group font-semibold text-navy-700 hover:text-navy-800 hover:underline">
+    <Link href={href} className="group inline-block py-0.5 font-semibold text-navy-700 hover:text-navy-800 hover:underline">
       {children}
       <span aria-hidden="true" className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">
         &nbsp;→

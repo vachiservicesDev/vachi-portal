@@ -35,13 +35,20 @@ interface Stub {
 const RUN_LABELS = { payPeriodStart: 'Period starts', payPeriodEnd: 'Period ends', payDate: 'Pay date' };
 const STUB_LABELS = { employeeId: 'Employee', grossPay: 'Gross pay', netPay: 'Net pay' };
 
-function RunDetail({ run, employees }: { run: PayRun; employees: EmployeeOption[] }) {
+function RunDetail({ run, employees, onChange }: { run: PayRun; employees: EmployeeOption[]; onChange: () => void }) {
   const detail = useResource<{ run: PayRun; stubs: Stub[] }>(`/api/payroll/runs/${run.id}`);
   const action = useAction();
   const stubs = detail.data?.stubs ?? [];
   const paid = new Set(stubs.map((s) => s.employeeId));
   const available = employees.filter((e) => e.status !== 'inactive' && !paid.has(e.id));
   const totals = stubs.reduce((acc, s) => ({ gross: acc.gross + Number(s.grossPay), net: acc.net + Number(s.netPay) }), { gross: 0, net: 0 });
+
+  const processed = run.status === 'processed';
+
+  async function setStatus(status: 'draft' | 'processed') {
+    const result = await action.run(status, `/api/payroll/runs/${run.id}`, { method: 'PATCH', body: { status } }, status === 'processed' ? 'Pay run marked processed. It is now locked.' : 'Pay run reopened.');
+    if (result.ok) onChange();
+  }
 
   async function addStub(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -61,6 +68,17 @@ function RunDetail({ run, employees }: { run: PayRun; employees: EmployeeOption[
           Pay run for <DateRange from={run.payPeriodStart} to={run.payPeriodEnd} />
         </>
       }
+      actions={
+        processed ? (
+          <Button variant="secondary" size="sm" busy={action.busy === 'draft'} busyLabel="Reopening…" onClick={() => setStatus('draft')}>
+            Reopen
+          </Button>
+        ) : (
+          <Button size="sm" disabled={stubs.length === 0} busy={action.busy === 'processed'} busyLabel="Saving…" onClick={() => setStatus('processed')}>
+            Mark processed
+          </Button>
+        )
+      }
       description={
         <>
           Paid on <When iso={run.payDate} />. {stubs.length} {stubs.length === 1 ? 'stub' : 'stubs'}, {formatMoney(totals.gross)} gross, {formatMoney(totals.net)} net.
@@ -68,6 +86,11 @@ function RunDetail({ run, employees }: { run: PayRun; employees: EmployeeOption[
       }
     >
       {detail.error && <Alert title="Couldn't load this pay run">{detail.error}</Alert>}
+      {processed && (
+        <div className="mb-5">
+          <Alert tone="info">This run is processed and locked. Reopen it to add or correct stubs.</Alert>
+        </div>
+      )}
       {detail.loading && !detail.data ? (
         <Loading label="Loading pay stubs" />
       ) : stubs.length === 0 ? (
@@ -85,33 +108,37 @@ function RunDetail({ run, employees }: { run: PayRun; employees: EmployeeOption[
         />
       )}
 
-      <form onSubmit={addStub} noValidate className="mt-8 grid gap-5 border-t border-line pt-6">
-        <h3 className="font-display text-lg font-semibold text-ink">Add a pay stub</h3>
+      <div className="mt-5">
         <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={STUB_LABELS} />
-        {available.length === 0 ? (
-          <p className="text-ink-2">Every active employee already has a stub in this run.</p>
-        ) : (
-          <>
-            <SelectField
-              name="employeeId"
-              label="Employee"
-              required
-              placeholder="Choose an employee"
-              options={available.map((e) => ({ value: e.id, label: fullName(e.firstName, e.lastName) }))}
-              errors={action.fieldErrors}
-            />
-            <FieldRow>
-              <TextField name="grossPay" label="Gross pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} />
-              <TextField name="netPay" label="Net pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} hint="Can't be more than gross pay." />
-            </FieldRow>
-            <div>
-              <Button type="submit" busy={action.busy === 'stub'} busyLabel="Adding…">
-                Add pay stub
-              </Button>
-            </div>
-          </>
-        )}
-      </form>
+      </div>
+      {!processed && (
+        <form onSubmit={addStub} noValidate className="mt-8 grid gap-5 border-t border-line pt-6">
+          <h3 className="font-display text-lg font-semibold text-ink">Add a pay stub</h3>
+          {available.length === 0 ? (
+            <p className="text-ink-2">Every active employee already has a stub in this run.</p>
+          ) : (
+            <>
+              <SelectField
+                name="employeeId"
+                label="Employee"
+                required
+                placeholder="Choose an employee"
+                options={available.map((e) => ({ value: e.id, label: fullName(e.firstName, e.lastName) }))}
+                errors={action.fieldErrors}
+              />
+              <FieldRow>
+                <TextField name="grossPay" label="Gross pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} />
+                <TextField name="netPay" label="Net pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} hint="Can't be more than gross pay." />
+              </FieldRow>
+              <div>
+                <Button type="submit" busy={action.busy === 'stub'} busyLabel="Adding…">
+                  Add pay stub
+                </Button>
+              </div>
+            </>
+          )}
+        </form>
+      )}
     </Panel>
   );
 }
@@ -196,7 +223,7 @@ export default function AdminPayrollPage() {
           )}
         </section>
 
-        {current && <RunDetail key={current.id} run={current} employees={people.data?.employees ?? []} />}
+        {current && <RunDetail key={current.id} run={current} employees={people.data?.employees ?? []} onChange={runs.reload} />}
       </div>
     </>
   );

@@ -117,7 +117,7 @@ export default function AdminTrainingTaskPage() {
                     Employees not yet assigned
                     <button
                       type="button"
-                      className="link text-sm font-normal"
+                      className="link inline-block py-0.5 text-sm font-normal"
                       onClick={() => setSelected(selected.length === available.length ? [] : available.map((e) => e.id))}
                     >
                       {selected.length === available.length ? 'Clear all' : 'Select all'}
@@ -127,7 +127,7 @@ export default function AdminTrainingTaskPage() {
                     {available.map((e) => (
                       <li key={e.id}>
                         <label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-md border border-line px-3 py-2 hover:border-navy-700 has-[:checked]:border-navy-700 has-[:checked]:bg-navy-50">
-                          <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggle(e.id)} className="h-5 w-5 shrink-0 accent-navy-700" />
+                          <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggle(e.id)} className="h-6 w-6 shrink-0 accent-navy-700" />
                           <span className="min-w-0">
                             <span className="block truncate font-medium text-ink">{fullName(e.firstName, e.lastName)}</span>
                             {e.department && <span className="block truncate text-sm text-muted">{e.department}</span>}

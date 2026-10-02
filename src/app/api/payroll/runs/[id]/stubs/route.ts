@@ -24,8 +24,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
   }
 
-  const [run] = await db.select({ id: payRuns.id }).from(payRuns).where(eq(payRuns.id, params.id)).limit(1);
+  const [run] = await db.select({ id: payRuns.id, status: payRuns.status }).from(payRuns).where(eq(payRuns.id, params.id)).limit(1);
   if (!run) return NextResponse.json({ message: 'Pay run not found' }, { status: 404 });
+  if (run.status === 'processed') return NextResponse.json({ message: 'This pay run is processed. Reopen it to add stubs.' }, { status: 409 });
 
   const [existing] = await db
     .select({ id: payStubs.id })

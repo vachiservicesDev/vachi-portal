@@ -116,7 +116,7 @@ export function TextField({
         maxLength={maxLength}
         aria-invalid={!!error}
         aria-describedby={describedBy(fid, !!hint, !!error)}
-        className={`${inputClass} ${borderClass(!!error)} mt-1.5 ${readOnly ? 'bg-subtle text-ink-2' : ''}`}
+        className={`${readOnly ? inputClass.replace('bg-white text-ink', 'bg-subtle text-ink-2 cursor-default') : inputClass} ${borderClass(!!error)} mt-1.5`}
       />
       <FieldHelp name={fid} hint={hint} error={error} />
     </div>
@@ -241,7 +241,7 @@ export function CheckboxField({
   const fid = fieldId(name, id);
   return (
     <div className={className}>
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <input
           id={fid}
           name={name}
@@ -249,13 +249,13 @@ export function CheckboxField({
           {...(checked !== undefined ? { checked, onChange } : { defaultChecked })}
           disabled={disabled}
           aria-describedby={describedBy(fid, !!hint, !!error)}
-          className="mt-0.5 h-5 w-5 shrink-0 rounded border-line-input accent-navy-700"
+          className="h-6 w-6 shrink-0 rounded border-line-input accent-navy-700"
         />
         <label htmlFor={fid} className="font-medium text-ink">
           {label}
         </label>
       </div>
-      <div className="pl-8">
+      <div className="pl-9">
         <FieldHelp name={fid} hint={hint} error={error} />
       </div>
     </div>

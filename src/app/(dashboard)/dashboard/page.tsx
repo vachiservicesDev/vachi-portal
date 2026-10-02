@@ -93,10 +93,12 @@ export default async function EmployeeHomePage() {
                       {s.done ? <Check className="h-4 w-4 text-green-700" /> : String(i + 1).padStart(2, '0')}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-ink group-hover:text-navy-700">{s.title}</span>
-                      <span className="block text-sm text-muted">{s.detail}</span>
+                      <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <span className="font-medium text-ink group-hover:text-navy-700">{s.title}</span>
+                        {s.done ? <Chip tone="live">Done</Chip> : <Chip tone="new">To do</Chip>}
+                      </span>
+                      <span className="mt-0.5 block text-sm text-muted">{s.detail}</span>
                     </span>
-                    {s.done ? <Chip tone="live">Done</Chip> : <Chip tone="new">To do</Chip>}
                   </Link>
                 </li>
               ))}
