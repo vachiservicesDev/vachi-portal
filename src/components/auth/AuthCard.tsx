@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { Logo } from '@/components/ui/Logo';
 
 const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL || 'https://vachiservices.com';
+/** The site's address as people type it, e.g. "vachigroup.com". */
+const WEBSITE_LABEL = new URL(WEBSITE_URL).host.replace(/^www\./, '');
 
 /** The centred card used by sign-in, password reset and set-password, matching the website's admin sign-in. */
 export function AuthCard({ title, lead, children, footer }: { title: string; lead?: ReactNode; children: ReactNode; footer?: ReactNode }) {
@@ -22,7 +24,7 @@ export function AuthCard({ title, lead, children, footer }: { title: string; lea
           {footer}
           {footer && ' '}
           <Link href={WEBSITE_URL} className="link">
-            Back to vachiservices.com
+            Back to {WEBSITE_LABEL}
           </Link>
         </p>
       </div>
