@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db';
-import { onboardingDocuments, onboardingSessions } from '@/db/schema';
+import { auditLogs, notifications, onboardingDocuments, onboardingSessions } from '@/db/schema';
 import { POST as createSession } from '@/app/api/onboarding/sessions/route';
 import { POST as generateDoc } from '@/app/api/onboarding/sessions/[id]/generate/route';
 import { POST as sendForSignature } from '@/app/api/onboarding/sessions/[id]/send/route';
 import { POST as webhook } from '@/app/api/webhooks/dropbox-sign/route';
 import { GET as meRoute } from '@/app/api/onboarding/me/route';
+import { GET as documentFile } from '@/app/api/onboarding/documents/[id]/file/route';
+import { POST as signDocument } from '@/app/api/onboarding/documents/[id]/sign/route';
 import { eq } from 'drizzle-orm';
 import { resetDb, seedEmployee, seedProfile } from './db';
 import { getRequest, jsonRequest, formDataRequest } from './http';
@@ -39,77 +41,97 @@ describe('Onboarding (Phase 2)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('admin: full flow - create, generate, send, webhook completes it', async () => {
-    setCurrentUser(adminId);
+  it('full flow - admin creates, generates and sends; the employee signs in the portal', async () => {
+    const { session, document } = await seedSentOnboardingDoc(adminId);
+    expect(document.status).toBe('sent_for_signature');
+    expect(document.signatureProvider).toBe('portal');
 
-    const createRes = await createSession(
-      jsonRequest({
-        employeeEmail: 'new.hire@test.local',
-        firstName: 'New',
-        lastName: 'Hire',
-        employmentType: 'w2',
-        startDate: '2026-01-05',
-      }),
-    );
-    expect(createRes.status).toBe(201);
-    const { session } = await createRes.json();
-    expect(session.status).toBe('draft');
-
-    const genRes = await generateDoc(getRequest(), { params: { id: session.id } });
-    expect(genRes.status).toBe(201);
-    const { document } = await genRes.json();
-    expect(document.status).toBe('generated');
-    expect(document.generatedFilePath).toBe(`${session.id}/onboarding-acknowledgment.pdf`);
-
-    const sendRes = await sendForSignature(jsonRequest({ documentId: document.id }), {
-      params: { id: session.id },
-    });
-    expect(sendRes.status).toBe(200);
-
-    const [sentDoc] = await db
-      .select()
-      .from(onboardingDocuments)
-      .where(eq(onboardingDocuments.id, document.id));
-    expect(sentDoc.status).toBe('sent_for_signature');
-    expect(sentDoc.signatureRequestId).toBe('test-request-id');
-
-    const [sentSession] = await db
-      .select()
-      .from(onboardingSessions)
-      .where(eq(onboardingSessions.id, session.id));
+    const [sentSession] = await db.select().from(onboardingSessions).where(eq(onboardingSessions.id, session.id));
     expect(sentSession.status).toBe('sent');
 
-    // Simulate Dropbox Sign's webhook reporting the signature complete.
-    // event_hash must match src/app/api/webhooks/dropbox-sign/route.ts's
-    // HMAC verification, which reads DROPBOX_SIGN_API_KEY.
-    process.env.DROPBOX_SIGN_API_KEY = 'test-api-key';
-    const { createHmac } = await import('node:crypto');
-    const eventTime = '1700000000';
-    const eventType = 'signature_request_all_signed';
-    const eventHash = createHmac('sha256', 'test-api-key').update(eventTime + eventType).digest('hex');
+    const employeeProfile = await seedProfile({ role: 'employee', email: 'x@test.local' });
+    setCurrentUser(employeeProfile.id);
 
-    const webhookRes = await webhook(
-      formDataRequest({
-        json: JSON.stringify({
-          event: { event_type: eventType, event_time: eventTime, event_hash: eventHash },
-          signature_request: { signature_request_id: 'test-request-id' },
-        }),
-      }),
+    const fileRes = await documentFile(getRequest(), { params: { id: document.id } });
+    expect(fileRes.status).toBe(200);
+    expect(fileRes.headers.get('content-type')).toBe('application/pdf');
+
+    const signRes = await signDocument(
+      jsonRequest({ fullName: '  x   y ', consent: true }),
+      { params: { id: document.id } },
     );
-    expect(webhookRes.status).toBe(200);
+    expect(signRes.status).toBe(200);
 
-    const [signedDoc] = await db
-      .select()
-      .from(onboardingDocuments)
-      .where(eq(onboardingDocuments.id, document.id));
+    const [signedDoc] = await db.select().from(onboardingDocuments).where(eq(onboardingDocuments.id, document.id));
     expect(signedDoc.status).toBe('signed');
-    expect(signedDoc.signedFilePath).toBe(`${session.id}/onboarding_acknowledgment-signed.pdf`);
+    expect(signedDoc.signedAt).not.toBeNull();
+    expect(signedDoc.signedFilePath).toMatch(new RegExp(`^${session.id}/onboarding_acknowledgment-signed-\\d+\\.pdf$`));
 
-    const [completedSession] = await db
-      .select()
-      .from(onboardingSessions)
-      .where(eq(onboardingSessions.id, session.id));
+    const [completedSession] = await db.select().from(onboardingSessions).where(eq(onboardingSessions.id, session.id));
     expect(completedSession.status).toBe('completed');
+
+    const [audit] = await db.select().from(auditLogs).where(eq(auditLogs.action, 'onboarding_document_signed'));
+    expect((audit.newValues as { signedName: string }).signedName).toBe('x   y');
+
+    const [hrNote] = await db.select().from(notifications).where(eq(notifications.userId, adminId));
+    expect(hrNote.type).toBe('onboarding_document_signed');
+
+    const again = await signDocument(jsonRequest({ fullName: 'X Y', consent: true }), { params: { id: document.id } });
+    expect(again.status).toBe(409);
+  });
+
+  it('refuses a signature with the wrong name or without consent', async () => {
+    const { document } = await seedSentOnboardingDoc(adminId);
+    const employeeProfile = await seedProfile({ role: 'employee', email: 'x@test.local' });
+    setCurrentUser(employeeProfile.id);
+
+    const wrongName = await signDocument(jsonRequest({ fullName: 'Someone Else', consent: true }), { params: { id: document.id } });
+    expect(wrongName.status).toBe(400);
+    const noConsent = await signDocument(jsonRequest({ fullName: 'X Y', consent: false }), { params: { id: document.id } });
+    expect(noConsent.status).toBe(400);
+
+    const [doc] = await db.select().from(onboardingDocuments).where(eq(onboardingDocuments.id, document.id));
+    expect(doc.status).toBe('sent_for_signature');
+  });
+
+  it('accepts the name printed on the document when it differs from the employee record', async () => {
+    const { session, document } = await seedSentOnboardingDoc(adminId);
+    await db
+      .update(onboardingSessions)
+      .set({ formData: { ...session.formData, employeeName: 'Xavier Young' } })
+      .where(eq(onboardingSessions.id, session.id));
+    const employeeProfile = await seedProfile({ role: 'employee', email: 'x@test.local' });
+    setCurrentUser(employeeProfile.id);
+
+    const res = await signDocument(jsonRequest({ fullName: 'Xavier Young', consent: true }), { params: { id: document.id } });
+    expect(res.status).toBe(200);
+  });
+
+  it("doesn't let another employee, or an admin, sign or open someone else's document", async () => {
+    const { document } = await seedSentOnboardingDoc(adminId);
+
+    const other = await seedProfile({ role: 'employee', email: 'other@test.local' });
+    setCurrentUser(other.id);
+    expect((await signDocument(jsonRequest({ fullName: 'X Y', consent: true }), { params: { id: document.id } })).status).toBe(404);
+    expect((await documentFile(getRequest(), { params: { id: document.id } })).status).toBe(404);
+
+    setCurrentUser(adminId);
+    expect((await signDocument(jsonRequest({ fullName: 'X Y', consent: true }), { params: { id: document.id } })).status).toBe(404);
+    expect((await documentFile(getRequest(), { params: { id: document.id } })).status).toBe(200);
+  });
+
+  it("can't sign a document HR hasn't sent yet", async () => {
+    setCurrentUser(adminId);
+    const createRes = await createSession(
+      jsonRequest({ employeeEmail: 'x@test.local', firstName: 'X', lastName: 'Y', employmentType: 'w2', startDate: '2026-01-05' }),
+    );
+    const { session } = await createRes.json();
+    const { document } = await (await generateDoc(getRequest(), { params: { id: session.id } })).json();
+
+    const employeeProfile = await seedProfile({ role: 'employee', email: 'x@test.local' });
+    setCurrentUser(employeeProfile.id);
+    const res = await signDocument(jsonRequest({ fullName: 'X Y', consent: true }), { params: { id: document.id } });
+    expect(res.status).toBe(409);
   });
 
   it('webhook ignores an event with a bad event_hash rather than trusting it', async () => {

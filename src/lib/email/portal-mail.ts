@@ -100,6 +100,26 @@ Vachi Services LLC`;
   return { subject, html, text };
 }
 
+export function signRequestEmail(firstName: string, documentName: string, url: string) {
+  const name = firstName.trim() || 'there';
+  const subject = `Please sign: ${documentName}`;
+  const ask = `HR has sent you your ${documentName.toLowerCase()} to review and sign. Sign in to the Vachi Employee Portal, open the document, then type your full name to sign it. It takes about a minute.`;
+  const html = layout(
+    `Hi ${escape(name)},`,
+    [escape(ask)],
+    { label: 'Review and sign', url },
+    'You can download a signed copy from the portal once you\'re done. Questions? Reply to this email.',
+  );
+  const text = `Hi ${name},
+
+${ask}
+
+${url}
+
+Vachi Services LLC`;
+  return { subject, html, text };
+}
+
 /** Sends one email from the portal's SMTP account. Throws when SMTP is missing or the send fails. */
 export async function sendPortalMail(to: string, mail: { subject: string; html: string; text: string }): Promise<void> {
   const user = process.env.SMTP_USER;

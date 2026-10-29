@@ -24,7 +24,7 @@ today, 🚧 = not yet built.
 - 🚧 Legacy-account one-time migration path (N/A — no legacy data here; will matter only if data is ever imported from the old system)
 
 **Onboarding**
-- ✅ Employee onboarding workflow: PDF document generation, e-signature via Dropbox Sign (sandbox), document storage in Supabase Storage. Vendor is swappable (DocuSign not yet chosen over Dropbox Sign — see docs/PLAN.md) and only one document type exists so far (a generic onboarding acknowledgment) — real forms (I-9 itself, offer letters, etc.) are added as more PDF generators following the same pattern.
+- ✅ Employee onboarding workflow: PDF document generation, free in-portal e-signature (the employee types their name and consents; the PDF is stamped with a signing certificate), document storage in Supabase Storage. The old Dropbox Sign adapter and webhook are still in the code if a paid vendor is wanted later and only one document type exists so far (a generic onboarding acknowledgment) — real forms (I-9 itself, offer letters, etc.) are added as more PDF generators following the same pattern.
 
 **I-9 / E-Verify compliance**
 - ✅ Digital Form I-9: Section 1 (employee self-entry, typed-name attestation), Section 2 (employer document verification, with a computed 3-business-day-from-hire due date), a combined PDF snapshot stored in Supabase Storage
@@ -127,10 +127,12 @@ enabled on every one, zero security or performance warnings (the one
 remaining "unused index" note is expected — no query traffic has hit them
 yet).
 
-To test the onboarding e-signature flow end to end, Dropbox Sign needs to
-reach your app over the internet to deliver the webhook — run
-`npx ngrok http 3000` (free) and set `NEXT_PUBLIC_APP_URL` to the ngrok
-https URL.
+Onboarding signing happens inside the portal and needs no outside account:
+HR clicks "Send for signature", the employee gets an in-app notification and
+(when `SMTP_*` is set) an email, opens the document on `/onboarding`, types
+their full name as HR has it, ticks the consent box and signs. The signed PDF
+gets a signature block and a signing certificate page (name, email, UTC time,
+IP, browser, SHA-256 of the original), and the same facts go to the audit log.
 
 What's free/sandbox for local dev:
 - **Supabase**: free project tier (Auth + Postgres + Storage + Realtime all included)
@@ -186,12 +188,9 @@ Supabase stack (`supabase start`) with an admin login; pass it with
   Auth, `/dashboard` is middleware-protected, reads the caller's own
   profile through Drizzle, and signs out a deactivated account.
 - **Phase 2 (onboarding)**: done for one document type. Admin creates a
-  session (`/admin/onboarding`), generates a PDF, sends it for signature via
-  Dropbox Sign sandbox; the employee sees status at `/onboarding`; a webhook
-  marks it signed and stores the final signed PDF in Storage. Not yet
-  verified against a live Dropbox Sign account from this environment (no
-  outbound network access here) — run one real sandbox request before
-  trusting the webhook/signature-verification code path in production.
+  session (`/admin/onboarding`), generates a PDF, sends it for signature; the employee
+  signs it on `/onboarding` inside the portal, which stores the stamped,
+  signed PDF in Storage and completes the session.
 - **Phase 3 (I-9/E-Verify)**: done for Sections 1-2 and manual E-Verify case
   tracking. Admin starts an I-9 from `/admin/i9`, employee completes Section
   1 at `/i9`, admin completes Section 2 and records the E-Verify case number

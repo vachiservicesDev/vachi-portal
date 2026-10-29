@@ -58,7 +58,7 @@ export default async function EmployeeHomePage() {
       title: 'Sign your onboarding documents',
       done: onboardingSession.status === 'completed',
       href: '/onboarding',
-      detail: onboardingSession.status === 'completed' ? 'All signed.' : 'Dropbox Sign emails you each document to sign.',
+      detail: onboardingSession.status === 'completed' ? 'All signed.' : 'Sign each document on the Onboarding page.',
     });
   }
   if (i9Record) {
