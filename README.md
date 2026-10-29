@@ -111,11 +111,15 @@ Before inviting real employees, in the Supabase dashboard under
    `https://portal.vachiservices.com/auth/confirm` to the redirect allow-list.
    (If it's missing, links fall back to the site root; the sign-in page
    forwards them to `/auth/confirm` anyway, but set it properly.)
-2. **SMTP**: add a custom SMTP sender (e.g. Resend or Google Workspace).
-   Supabase's built-in mailer only delivers to the project's team members,
-   so "Email an invite" won't reach anyone else without it. Until then, use
-   "Create invite link instead" on the employee page and send the link
-   yourself.
+2. **Email**: the portal sends its own invite and password-reset emails
+   (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`; a Gmail account with an
+   App Password works) with links straight to `/auth/confirm`, so they don't
+   depend on Supabase's mailer or Site URL. Without SMTP set, use "Create
+   invite link instead" and send the link yourself.
+3. **No email needed**: "Set a starting password" on the employee page creates
+   the login with a password HR hands over (typed, or generated). The employee
+   is sent to choose their own on first sign-in, and can use "Forgot your
+   password?" any time after.
 
 The project this was built against (`vrwpkgijaeppraokhiis`) has all three
 applied and verified via the Supabase connector's advisors: 21 tables, RLS

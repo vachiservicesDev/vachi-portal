@@ -17,7 +17,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({
     auth: {
       getUser: async () => ({
-        data: { user: authState.userId ? { id: authState.userId } : null },
+        data: { user: authState.userId ? { id: authState.userId, user_metadata: authState.userMetadata } : null },
       }),
     },
   }),

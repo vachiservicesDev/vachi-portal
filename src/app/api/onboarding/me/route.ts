@@ -1,3 +1,4 @@
+import { mustChangePassword } from '@/lib/auth/requireAdmin';
 import { ownEmployee } from '@/lib/employees';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
@@ -13,6 +14,7 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ message: 'Not signed in' }, { status: 401 });
+  if (mustChangePassword(user)) return NextResponse.json({ message: 'Choose your own password before continuing.' }, { status: 403 });
 
   const [profile] = await db.select().from(profiles).where(eq(profiles.id, user.id)).limit(1);
   if (!profile) return NextResponse.json({ session: null, documents: [] });

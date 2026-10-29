@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { api } from '@/lib/client/api';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/fields';
 import { Alert } from '@/components/ui/ui';
@@ -16,13 +16,11 @@ export function ForgotForm() {
     const email = String(new FormData(e.currentTarget).get('email') ?? '').trim();
     setBusy(true);
     setError(null);
-    const { error: resetError } = await createClient().auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/confirm?next=/set-password`,
-    });
+    const result = await api('/api/auth/forgot-password', { body: { email } });
     setBusy(false);
     // Unknown addresses get the same answer, so the form can't be used to find out who works here.
-    if (resetError && /rate limit|too many/i.test(resetError.message)) {
-      setError('Too many requests. Wait a few minutes, then try again.');
+    if (result.status === 429 || result.status === 400) {
+      setError(result.message);
       return;
     }
     setSentTo(email);

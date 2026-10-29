@@ -6,7 +6,7 @@ import { useAction, useResource } from '@/lib/client/api';
 import { fullName, statusOf } from '@/lib/status';
 import { Button } from '@/components/ui/Button';
 import { FormStatus } from '@/components/ui/forms';
-import { inputClass, borderClass, SelectField } from '@/components/ui/fields';
+import { inputClass, borderClass, SelectField, TextField } from '@/components/ui/fields';
 import { Alert, Chip, Loading, PageHeader, Panel } from '@/components/ui/ui';
 import { EMPLOYEE_LABELS, EmployeeFields, OPTIONAL_EMPLOYEE_FIELDS, type EmployeeValues } from '../EmployeeForm';
 
@@ -40,14 +40,43 @@ function InviteLink({ link }: { link: string }) {
   );
 }
 
+function StartingPassword({ password, email }: { password: string; email: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="mt-4 rounded-lg border border-line bg-subtle p-4">
+      <label htmlFor="starting-password" className="text-sm font-medium text-ink">
+        Starting password
+      </label>
+      <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+        <input id="starting-password" readOnly value={password} onFocus={(e) => e.currentTarget.select()} className={`${inputClass} ${borderClass(false)} font-mono`} />
+        <Button
+          variant="secondary"
+          onClick={async () => {
+            await navigator.clipboard.writeText(`Sign in at ${window.location.origin}/login\nEmail: ${email}\nStarting password: ${password}`);
+            setCopied(true);
+          }}
+        >
+          {copied ? 'Copied' : 'Copy sign-in details'}
+        </Button>
+      </div>
+      <p className="mt-2 text-sm text-muted">
+        Shown once. Give it to them privately. When they first sign in they choose their own, and they can reset it any time with &quot;Forgot your password?&quot;.
+      </p>
+    </div>
+  );
+}
+
 function AccessPanel({ detail, reload }: { detail: Detail; reload: () => Promise<void> }) {
   const action = useAction();
   const [link, setLink] = useState<string | null>(null);
+  const [password, setPassword] = useState<string | null>(null);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const { access, employee, isSelf } = detail;
   const inactive = employee.status === 'inactive';
 
   async function invite(mode: 'email' | 'link') {
     setLink(null);
+    setPassword(null);
     const result = await action.run<{ outcome: string; link: string | null }>(mode, `/api/employees/${employee.id}/invite`, { body: { mode } });
     if (!result.ok || !result.data) return;
     if (result.data.link) setLink(result.data.link);
@@ -60,6 +89,21 @@ function AccessPanel({ detail, reload }: { detail: Detail; reload: () => Promise
           ? `${employee.email} already had a login, so it's now linked to the portal. They sign in with their existing password.`
           : 'Link created. Copy it below.',
     );
+    await reload();
+  }
+
+  async function setStarting(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setLink(null);
+    setPassword(null);
+    const typed = String(new FormData(e.currentTarget).get('password') ?? '').trim();
+    const result = await action.run<{ password: string }>('password', `/api/employees/${employee.id}/invite`, {
+      body: typed ? { mode: 'password', password: typed } : { mode: 'password' },
+    });
+    if (!result.ok || !result.data) return;
+    setPassword(result.data.password);
+    setShowPasswordForm(false);
+    action.setSuccess(access.status === 'none' ? `Login created for ${employee.email}.` : `Starting password set for ${employee.email}.`);
     await reload();
   }
 
@@ -102,9 +146,32 @@ function AccessPanel({ detail, reload }: { detail: Detail; reload: () => Promise
             <Button variant="secondary" onClick={() => invite('link')} busy={action.busy === 'link'} busyLabel="Creating link" disabled={!!action.busy}>
               {access.status === 'none' ? 'Create invite link instead' : 'Create sign-in link'}
             </Button>
+            {access.role !== 'admin' && (
+              <Button variant="secondary" onClick={() => setShowPasswordForm((v) => !v)} disabled={!!action.busy} aria-expanded={showPasswordForm}>
+                Set a starting password
+              </Button>
+            )}
           </div>
         )}
+        {showPasswordForm && !inactive && (
+          <form onSubmit={setStarting} className="grid gap-4 rounded-lg border border-line p-4" noValidate>
+            <TextField
+              name="password"
+              label="Starting password"
+              type="password"
+              autoComplete="new-password"
+              errors={action.fieldErrors}
+              hint="At least 10 characters. Leave it empty and we'll make a strong one for you."
+            />
+            <div className="flex justify-end">
+              <Button type="submit" busy={action.busy === 'password'} busyLabel="Saving">
+                {access.status === 'none' ? 'Create login' : 'Set password'}
+              </Button>
+            </div>
+          </form>
+        )}
         {link && <InviteLink link={link} />}
+        {password && <StartingPassword password={password} email={access.email ?? employee.email} />}
         {access.status === 'active' && (
           <div className="border-t border-line pt-5">
             <SelectField
