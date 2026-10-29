@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db';
-import { employees, notifications, profiles } from '@/db/schema';
+import { auditLogs, employees, notifications, profiles } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { POST as createEmployee, GET as listEmployees } from '@/app/api/employees/route';
 import { POST as inviteEmployee } from '@/app/api/employees/[id]/invite/route';
@@ -34,6 +34,8 @@ const authAdmin = {
   inviteUserByEmail: vi.fn(),
   generateLink: vi.fn(),
   getUserById: vi.fn(),
+  createUser: vi.fn(),
+  updateUserById: vi.fn(),
 };
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ auth: { admin: authAdmin, resetPasswordForEmail: vi.fn(async () => ({ error: null })) } }),
@@ -105,6 +107,58 @@ describe('Portal rules added in the design-system pass', () => {
       expect(row.email).toBe('new@example.com');
       const [prof] = await db.select().from(profiles).where(eq(profiles.id, profile!.id));
       expect(prof.email).toBe('new@example.com');
+    });
+
+    it('a starting password creates a confirmed login that must be changed, and links the employee', async () => {
+      const { employee } = await seedEmployee({ linkToProfile: false, email: 'pw.hire@example.com' });
+      const newUserId = '5b2c1a77-3d0e-4c3f-8a51-6f1e2d9c0b44';
+      authAdmin.createUser.mockResolvedValueOnce({ data: { user: { id: newUserId } }, error: null });
+
+      const res = await inviteEmployee(jsonRequest({ mode: 'password' }), { params: { id: employee.id } });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.outcome).toBe('password-set');
+      expect(body.password).toMatch(/^[A-Za-z2-9]{4}-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}$/);
+      expect(authAdmin.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'pw.hire@example.com',
+          password: body.password,
+          email_confirm: true,
+          user_metadata: expect.objectContaining({ must_change_password: true }),
+        }),
+      );
+      const [linked] = await db.select().from(employees).where(eq(employees.id, employee.id));
+      expect(linked.userId).toBe(newUserId);
+    });
+
+    it('uses the password HR typed, rejects a short one, and never logs it', async () => {
+      const { employee, profile } = await seedEmployee({ email: 'linked@example.com' });
+      authAdmin.updateUserById.mockResolvedValue({ data: { user: { id: profile!.id } }, error: null });
+
+      const short = await inviteEmployee(jsonRequest({ mode: 'password', password: 'short' }), { params: { id: employee.id } });
+      expect(short.status).toBe(400);
+      expect((await short.json()).errors.fieldErrors.password).toBeTruthy();
+
+      const res = await inviteEmployee(jsonRequest({ mode: 'password', password: 'Welcome-to-Vachi-26' }), { params: { id: employee.id } });
+      expect(res.status).toBe(200);
+      expect((await res.json()).password).toBe('Welcome-to-Vachi-26');
+      expect(authAdmin.updateUserById).toHaveBeenCalledWith(profile!.id, expect.objectContaining({ password: 'Welcome-to-Vachi-26' }));
+      const logs = await db.select().from(auditLogs);
+      expect(JSON.stringify(logs)).not.toContain('Welcome-to-Vachi-26');
+    });
+
+    it("never sets an admin's password, and reports an email that already has a login", async () => {
+      const otherAdmin = await seedProfile({ role: 'admin', email: 'other.admin@example.com' });
+      const { employee: adminEmployee } = await seedEmployee({ linkToProfile: false, email: 'other.admin@example.com' });
+      await db.update(employees).set({ userId: otherAdmin.id }).where(eq(employees.id, adminEmployee.id));
+      const blocked = await inviteEmployee(jsonRequest({ mode: 'password' }), { params: { id: adminEmployee.id } });
+      expect(blocked.status).toBe(403);
+      expect(authAdmin.updateUserById).not.toHaveBeenCalled();
+
+      const { employee } = await seedEmployee({ linkToProfile: false, email: 'taken@example.com' });
+      authAdmin.createUser.mockResolvedValueOnce({ data: { user: null }, error: { message: 'A user with this email address has already been registered' } });
+      const taken = await inviteEmployee(jsonRequest({ mode: 'password' }), { params: { id: employee.id } });
+      expect(taken.status).toBe(409);
     });
 
     it('refuses to invite an inactive employee and is admin-only', async () => {

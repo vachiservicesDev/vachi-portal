@@ -1,9 +1,14 @@
+import { randomInt } from 'node:crypto';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { employees, profiles } from '@/db/schema';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 type Employee = typeof employees.$inferSelect;
+
+export type PasswordResult =
+  | { ok: true; outcome: 'password-set'; password: string; userId: string }
+  | { ok: false; status: number; message: string };
 
 export type InviteResult =
   | { ok: true; outcome: 'emailed' | 'link' | 'existing-account'; link?: string; userId: string }
@@ -78,6 +83,53 @@ export async function inviteEmployee(employee: Employee, mode: 'email' | 'link',
 
   await linkEmployeeToUser(employee.id, userId, email);
   return { ok: true, outcome, link, userId };
+}
+
+// No 0/O or 1/l/I, so a password read off a screen or over the phone is typed right the first time.
+const PASSWORD_CHARS = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** A random starting password like "Kq7m-x2Pa-9vRt". */
+export function generatePassword(): string {
+  const group = () => Array.from({ length: 4 }, () => PASSWORD_CHARS[randomInt(PASSWORD_CHARS.length)]).join('');
+  return `${group()}-${group()}-${group()}`;
+}
+
+/**
+ * Gives an employee a login with a starting password that HR shares with them, instead of an
+ * emailed link. The login is marked must_change_password, so their first sign-in sends them to
+ * choose their own; they can also use "Forgot your password?" any time after.
+ *
+ * Only for employee logins: an admin's password is never set from here, so one admin can't take
+ * over another's account.
+ */
+export async function setStartingPassword(employee: Employee, password: string | undefined): Promise<PasswordResult> {
+  if (employee.status === 'inactive') {
+    return { ok: false, status: 409, message: 'This employee is inactive. Set them to active before giving them a login.' };
+  }
+  const email = employee.email.toLowerCase();
+  const chosen = password ?? generatePassword();
+  const admin = createAdminClient();
+  const meta = { first_name: employee.firstName, last_name: employee.lastName, must_change_password: true };
+
+  if (employee.userId) {
+    const [profile] = await db.select({ role: profiles.role }).from(profiles).where(eq(profiles.id, employee.userId)).limit(1);
+    if (profile?.role === 'admin') {
+      return { ok: false, status: 403, message: "Admins set their own password. Send them a password reset instead." };
+    }
+    const { error } = await admin.auth.admin.updateUserById(employee.userId, { password: chosen, user_metadata: meta });
+    if (error) return { ok: false, status: 502, message: `Supabase couldn't set the password: ${error.message}` };
+    return { ok: true, outcome: 'password-set', password: chosen, userId: employee.userId };
+  }
+
+  const { data, error } = await admin.auth.admin.createUser({ email, password: chosen, email_confirm: true, user_metadata: meta });
+  if (error || !data.user) {
+    if (error && /already been registered|already registered|exists/i.test(error.message)) {
+      return { ok: false, status: 409, message: 'This email already has a login. Use "Email an invite" to link it, then they sign in with their existing password.' };
+    }
+    return { ok: false, status: 502, message: `Supabase couldn't create the login: ${error?.message ?? 'no user'}` };
+  }
+  await linkEmployeeToUser(employee.id, data.user.id, email);
+  return { ok: true, outcome: 'password-set', password: chosen, userId: data.user.id };
 }
 
 /** Creates the portal profile (never downgrading an existing admin) and links the employee record. */

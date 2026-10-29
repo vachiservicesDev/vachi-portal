@@ -115,7 +115,12 @@ Before inviting real employees, in the Supabase dashboard under
    Supabase's built-in mailer only delivers to the project's team members,
    so "Email an invite" won't reach anyone else without it. Until then, use
    "Create invite link instead" on the employee page and send the link
-   yourself.
+   yourself. A Gmail account works: host `smtp.gmail.com`, port 587, the
+   Gmail address as username and sender, and a Gmail App Password.
+3. **No email needed**: "Set a starting password" on the employee page creates
+   the login with a password HR hands over (typed, or generated). The employee
+   is sent to choose their own on first sign-in, and can use "Forgot your
+   password?" any time after.
 
 The project this was built against (`vrwpkgijaeppraokhiis`) has all three
 applied and verified via the Supabase connector's advisors: 21 tables, RLS

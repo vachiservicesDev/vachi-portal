@@ -26,7 +26,7 @@ export function SetPasswordForm() {
     if (Object.keys(next).length) return;
 
     setBusy(true);
-    const { error: updateError } = await createClient().auth.updateUser({ password });
+    const { error: updateError } = await createClient().auth.updateUser({ password, data: { must_change_password: false } });
     if (updateError) {
       setBusy(false);
       setError(
