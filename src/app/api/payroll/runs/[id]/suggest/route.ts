@@ -45,14 +45,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     .select({ deductions: payStubs.deductions, grossPay: payStubs.grossPay, netPay: payStubs.netPay, payDate: payRuns.payDate })
     .from(payStubs)
     .innerJoin(payRuns, eq(payRuns.id, payStubs.payRunId))
-    .where(and(eq(payStubs.employeeId, employeeId), ne(payStubs.payRunId, run.id), eq(payRuns.status, 'processed')))
+    .where(and(eq(payStubs.employeeId, employeeId), ne(payStubs.payRunId, run.id), eq(payRuns.status, 'processed'), lte(payRuns.payDate, run.payDate)))
     .orderBy(desc(payRuns.payDate));
   const last = earlier[0] ? detailOf(earlier[0].deductions, Number(earlier[0].grossPay), Number(earlier[0].netPay)) : null;
 
   const year = run.payDate.slice(0, 4);
   const ficaWagesYtd = round(
     earlier
-      .filter((s) => s.payDate.startsWith(year) && s.payDate <= run.payDate)
+      .filter((s) => s.payDate.startsWith(year))
       .map((s) => detailOf(s.deductions, Number(s.grossPay), Number(s.netPay)))
       .reduce((sum, d) => sum + d.earnings.reduce((a, e) => a + e.amount, 0) - d.deductions.filter((x) => x.label === 'Health insurance').reduce((a, x) => a + x.amount, 0), 0),
   );
