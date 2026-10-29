@@ -65,7 +65,7 @@ describe('Onboarding (Phase 2)', () => {
     const [signedDoc] = await db.select().from(onboardingDocuments).where(eq(onboardingDocuments.id, document.id));
     expect(signedDoc.status).toBe('signed');
     expect(signedDoc.signedAt).not.toBeNull();
-    expect(signedDoc.signedFilePath).toBe(`${session.id}/onboarding_acknowledgment-signed.pdf`);
+    expect(signedDoc.signedFilePath).toMatch(new RegExp(`^${session.id}/onboarding_acknowledgment-signed-\\d+\\.pdf$`));
 
     const [completedSession] = await db.select().from(onboardingSessions).where(eq(onboardingSessions.id, session.id));
     expect(completedSession.status).toBe('completed');
@@ -92,6 +92,19 @@ describe('Onboarding (Phase 2)', () => {
 
     const [doc] = await db.select().from(onboardingDocuments).where(eq(onboardingDocuments.id, document.id));
     expect(doc.status).toBe('sent_for_signature');
+  });
+
+  it('accepts the name printed on the document when it differs from the employee record', async () => {
+    const { session, document } = await seedSentOnboardingDoc(adminId);
+    await db
+      .update(onboardingSessions)
+      .set({ formData: { ...session.formData, employeeName: 'Xavier Young' } })
+      .where(eq(onboardingSessions.id, session.id));
+    const employeeProfile = await seedProfile({ role: 'employee', email: 'x@test.local' });
+    setCurrentUser(employeeProfile.id);
+
+    const res = await signDocument(jsonRequest({ fullName: 'Xavier Young', consent: true }), { params: { id: document.id } });
+    expect(res.status).toBe(200);
   });
 
   it("doesn't let another employee, or an admin, sign or open someone else's document", async () => {

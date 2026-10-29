@@ -35,8 +35,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (!body.success) {
     return NextResponse.json({ message: 'Invalid input', errors: body.error.flatten() }, { status: 400 });
   }
+  // The name printed on the document can differ from the employee record (HR typed it when starting
+  // onboarding), so either one signs.
   const expected = `${employee.firstName} ${employee.lastName}`;
-  if (normalizeName(body.data.fullName) !== normalizeName(expected)) {
+  const onDocument = (session.formData as { employeeName?: string } | null)?.employeeName;
+  const accepted = [expected, onDocument].filter((n): n is string => !!n).map(normalizeName);
+  if (!accepted.includes(normalizeName(body.data.fullName))) {
     return NextResponse.json(
       { message: 'Invalid input', errors: { formErrors: [], fieldErrors: { fullName: [`Type your full name as HR has it: ${expected}.`] } } },
       { status: 400 },
@@ -55,7 +59,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     userAgent,
     documentId: document.id,
   });
-  const signedPath = `${session.id}/${document.documentType}-signed.pdf`;
+  // A path per attempt, so a second, overlapping request that loses the update below can't
+  // overwrite the PDF that was actually accepted.
+  const signedPath = `${session.id}/${document.documentType}-signed-${signedAt.getTime()}.pdf`;
   await uploadOnboardingFile(signedPath, signed);
 
   // The status condition makes a double-click sign once, not twice.
