@@ -1,7 +1,11 @@
 'use client';
 
-import { useResource } from '@/lib/client/api';
+import { useState } from 'react';
+import { useAction, useResource } from '@/lib/client/api';
 import { statusOf } from '@/lib/status';
+import { Button } from '@/components/ui/Button';
+import { CheckboxField, TextField } from '@/components/ui/fields';
+import { FormStatus } from '@/components/ui/forms';
 import { Alert, Chip, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
 
 interface OnboardingDocument {
@@ -15,8 +19,54 @@ function docName(type: string) {
   return type === 'onboarding_acknowledgment' ? 'Onboarding acknowledgment' : type.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
+function SignForm({ doc, onSigned }: { doc: OnboardingDocument; onSigned: () => Promise<void> }) {
+  const [fullName, setFullName] = useState('');
+  const [consent, setConsent] = useState(false);
+  const action = useAction();
+
+  async function sign(e: React.FormEvent) {
+    e.preventDefault();
+    const result = await action.run('sign', `/api/onboarding/documents/${doc.id}/sign`, { body: { fullName, consent } });
+    if (result.ok) await onSigned();
+  }
+
+  return (
+    <form onSubmit={sign} className="mt-4 grid gap-4 rounded-lg border border-line p-4" noValidate>
+      <p className="text-sm text-ink">
+        1.{' '}
+        <a href={`/api/onboarding/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="font-medium text-navy-700 underline">
+          Open and read the document
+        </a>{' '}
+        (opens in a new tab). 2. Type your full name and agree below.
+      </p>
+      <FormStatus error={action.error} fieldErrors={action.fieldErrors} labels={{ fullName: 'Full name', consent: 'Agreement' }} />
+      <TextField
+        name="fullName"
+        label="Your full name"
+        required
+        hint="Type your first and last name exactly as HR has them. This is your signature."
+        value={fullName}
+        onChange={(e) => setFullName(e.target.value)}
+        errors={action.fieldErrors}
+      />
+      <CheckboxField
+        name="consent"
+        label="I have read this document and agree to sign it electronically. My typed name is my signature."
+        checked={consent}
+        onChange={(e) => setConsent(e.target.checked)}
+        errors={action.fieldErrors}
+      />
+      <div>
+        <Button type="submit" busy={action.busy === 'sign'} busyLabel="Signing" disabled={!consent || !fullName.trim()}>
+          Sign document
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export default function EmployeeOnboardingPage() {
-  const { data, error, loading } = useResource<{ session: { status: string } | null; documents: OnboardingDocument[] }>('/api/onboarding/me');
+  const { data, error, loading, reload } = useResource<{ session: { status: string } | null; documents: OnboardingDocument[] }>('/api/onboarding/me');
 
   if (loading && !data) return <Loading />;
 
@@ -29,7 +79,7 @@ export default function EmployeeOnboardingPage() {
       <PageHeader
         eyebrow="Getting started"
         title="Onboarding"
-        lead="Your welcome paperwork. Each document arrives by email from Dropbox Sign; sign it there and it shows as signed here."
+        lead="Your welcome paperwork. When HR sends you a document, read it here and sign it by typing your name."
         actions={st && <Chip tone={st.tone}>{st.label}</Chip>}
       />
       {error && <Alert title="Couldn't load your onboarding">{error}</Alert>}
@@ -43,22 +93,28 @@ export default function EmployeeOnboardingPage() {
             {documents.map((doc) => {
               const ds = statusOf('onboardingDocument', doc.status);
               return (
-                <li key={doc.id} className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-medium text-ink">{docName(doc.documentType)}</p>
-                    <p className="text-sm text-muted">
-                      {doc.status === 'sent_for_signature' ? (
-                        'Check your email for a signing request from Dropbox Sign.'
-                      ) : doc.status === 'signed' ? (
-                        <>
-                          Signed <When iso={doc.signedAt} />
-                        </>
-                      ) : (
-                        'HR will send this for your signature.'
-                      )}
-                    </p>
+                <li key={doc.id} className="py-4 first:pt-0 last:pb-0">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium text-ink">{docName(doc.documentType)}</p>
+                      <p className="text-sm text-muted">
+                        {doc.status === 'sent_for_signature' ? (
+                          'Ready for your signature.'
+                        ) : doc.status === 'signed' ? (
+                          <>
+                            Signed <When iso={doc.signedAt} />.{' '}
+                            <a href={`/api/onboarding/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="font-medium text-navy-700 underline">
+                              Download your signed copy
+                            </a>
+                          </>
+                        ) : (
+                          'HR will send this for your signature.'
+                        )}
+                      </p>
+                    </div>
+                    <Chip tone={ds.tone}>{doc.status === 'generated' ? 'Being prepared' : ds.label}</Chip>
                   </div>
-                  <Chip tone={ds.tone}>{doc.status === 'generated' ? 'Being prepared' : ds.label}</Chip>
+                  {doc.status === 'sent_for_signature' && <SignForm doc={doc} onSigned={reload} />}
                 </li>
               );
             })}

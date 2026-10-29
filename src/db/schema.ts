@@ -218,7 +218,7 @@ export const onboardingDocuments = pgTable('onboarding_documents', {
   status: onboardingDocumentStatusEnum('status').notNull().default('pending_generation'),
   // Path within the `onboarding-documents` Supabase Storage bucket.
   generatedFilePath: text('generated_file_path'),
-  signatureProvider: varchar('signature_provider', { length: 50 }), // 'dropbox_sign' | 'docusign'
+  signatureProvider: varchar('signature_provider', { length: 50 }), // 'portal' | 'dropbox_sign' | 'docusign'
   signatureRequestId: varchar('signature_request_id', { length: 255 }),
   signedFilePath: text('signed_file_path'),
   signedAt: timestamp('signed_at', { withTimezone: true }),

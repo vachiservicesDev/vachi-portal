@@ -38,7 +38,7 @@ export default function AdminOnboardingDetailPage() {
   }
 
   async function send(documentId: string) {
-    const result = await action.run(documentId, `/api/onboarding/sessions/${params.id}/send`, { body: { documentId } }, 'Sent. Dropbox Sign emails the employee a signing link.');
+    const result = await action.run(documentId, `/api/onboarding/sessions/${params.id}/send`, { body: { documentId } }, 'Sent. The employee gets an email and signs it in the portal.');
     if (result.ok) await reload();
   }
 
@@ -69,7 +69,7 @@ export default function AdminOnboardingDetailPage() {
         <FormStatus error={action.error} success={action.success} />
         <Panel
           title="Documents"
-          description="Generated as PDFs, stored privately and signed through Dropbox Sign. This page updates when the signature comes back."
+          description="Generated as PDFs and stored privately. The employee signs inside the portal by typing their name; the signed copy includes a signing certificate."
           actions={
             documents.length > 0 && (
               <Button variant="secondary" size="sm" onClick={() => reload()}>
@@ -113,6 +113,9 @@ export default function AdminOnboardingDetailPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <Chip tone={ds.tone}>{ds.label}</Chip>
+                      <a href={`/api/onboarding/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="text-sm font-medium text-navy-700 underline">
+                        {doc.status === 'signed' ? 'View signed copy' : 'View'}
+                      </a>
                       {(doc.status === 'generated' || doc.status === 'failed') && (
                         <Button size="sm" onClick={() => send(doc.id)} busy={action.busy === doc.id} busyLabel="Sending" disabled={!!action.busy}>
                           {doc.status === 'failed' ? 'Try sending again' : 'Send for signature'}

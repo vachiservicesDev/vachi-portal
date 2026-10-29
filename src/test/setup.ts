@@ -29,7 +29,12 @@ vi.mock('@/lib/supabase/server', () => ({
 vi.mock('@/lib/storage/onboarding', () => ({
   ONBOARDING_BUCKET: 'onboarding-documents',
   uploadOnboardingFile: vi.fn(async () => undefined),
-  downloadOnboardingFile: vi.fn(async () => new Uint8Array([1, 2, 3])),
+  downloadOnboardingFile: vi.fn(async () => {
+    const { PDFDocument } = await import('pdf-lib');
+    const pdf = await PDFDocument.create();
+    pdf.addPage([612, 792]);
+    return pdf.save();
+  }),
   getOnboardingFileSignedUrl: vi.fn(async () => 'https://example.test/signed'),
 }));
 
