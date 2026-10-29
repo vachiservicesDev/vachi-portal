@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, timesheetEntries, timesheets } from '@/db/schema';
 import { requireActiveUser } from '@/lib/auth/requireAdmin';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { EDITABLE } from '../../shared';
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
@@ -51,8 +51,12 @@ export async function POST(_request: Request, { params }: { params: { id: string
       rejectionReason: null,
       updatedAt: new Date(),
     })
-    .where(eq(timesheets.id, params.id))
+    // Only from an editable state, so a double click submits once.
+    .where(and(eq(timesheets.id, params.id), inArray(timesheets.status, EDITABLE as ('draft' | 'rejected')[])))
     .returning();
+  if (!updated) {
+    return NextResponse.json({ message: 'This timesheet has already been submitted.' }, { status: 409 });
+  }
 
   return NextResponse.json({ timesheet: updated });
 }

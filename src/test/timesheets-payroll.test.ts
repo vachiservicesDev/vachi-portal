@@ -69,6 +69,25 @@ describe('Timesheets & Payroll (Phase 5)', () => {
     expect(res.status).toBe(400);
   });
 
+  it('a double-clicked submit or review only goes through once', async () => {
+    const { profile } = await seedEmployee();
+    setCurrentUser(profile!.id);
+    const createRes = await createTimesheet(jsonRequest({ weekStarting: '2026-01-05', weekEnding: '2026-01-11' }));
+    const { timesheet } = await createRes.json();
+    await addEntry(jsonRequest({ date: '2026-01-05', hours: 8 }), { params: { id: timesheet.id } });
+
+    const submits = await Promise.all([1, 2, 3].map(() => submitTimesheet(getRequest(), { params: { id: timesheet.id } })));
+    expect(submits.map((r) => r.status).sort()).toEqual([200, 409, 409]);
+
+    setCurrentUser(adminId);
+    const reviews = await Promise.all(
+      [1, 2, 3].map(() => reviewTimesheet(jsonRequest({ decision: 'approved' }), { params: { id: timesheet.id } })),
+    );
+    expect(reviews.map((r) => r.status).sort()).toEqual([200, 409, 409]);
+    const logs = await db.select().from(auditLogs).where(eq(auditLogs.resourceId, timesheet.id));
+    expect(logs).toHaveLength(1);
+  });
+
   it('admin rejection notifies the employee, logs an audit entry, and sets the reason', async () => {
     const { profile } = await seedEmployee();
     setCurrentUser(profile!.id);
