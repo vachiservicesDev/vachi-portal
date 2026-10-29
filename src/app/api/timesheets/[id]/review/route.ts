@@ -5,7 +5,7 @@ import { employees, timesheets } from '@/db/schema';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 import { logAudit } from '@/lib/audit/log';
 import { createNotification } from '@/lib/notifications/create';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 const reviewSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
@@ -40,8 +40,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       approvedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(timesheets.id, params.id))
+    // Only from 'submitted', so two reviewers (or a double click) can't both apply a decision.
+    .where(and(eq(timesheets.id, params.id), eq(timesheets.status, 'submitted')))
     .returning();
+  if (!updated) {
+    return NextResponse.json({ message: 'Only submitted timesheets can be approved or returned.' }, { status: 409 });
+  }
 
   await logAudit({
     userId: gate.user.id,
