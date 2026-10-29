@@ -8,6 +8,7 @@ import { PATCH as reviewTimesheet } from '@/app/api/timesheets/[id]/review/route
 import { POST as createPayRun } from '@/app/api/payroll/runs/route';
 import { POST as addStub } from '@/app/api/payroll/runs/[id]/stubs/route';
 import { GET as myStubs } from '@/app/api/payroll/stubs/me/route';
+import { PATCH as updateRun } from '@/app/api/payroll/runs/[id]/route';
 import { eq } from 'drizzle-orm';
 import { resetDb, seedEmployee, seedProfile } from './db';
 import { getRequest, jsonRequest } from './http';
@@ -142,9 +143,10 @@ describe('Timesheets & Payroll (Phase 5)', () => {
     const { run } = await runRes.json();
     expect(run.provider).toBe('manual');
 
-    await addStub(jsonRequest({ employeeId: employee.id, grossPay: 5000, netPay: 3800 }), {
+    await addStub(jsonRequest({ employeeId: employee.id, salary: 5000, federalTax: 800, socialSecurity: 310, medicare: 90 }), {
       params: { id: run.id },
     });
+    await updateRun(jsonRequest({ status: 'processed' }), { params: { id: run.id } });
 
     setCurrentUser(profile!.id);
     const mine = await myStubs();

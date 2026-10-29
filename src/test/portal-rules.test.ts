@@ -293,12 +293,14 @@ describe('Portal rules added in the design-system pass', () => {
       const { run } = await (await createPayRun(jsonRequest({ payPeriodStart: '2026-02-01', payPeriodEnd: '2026-02-15', payDate: '2026-02-20' }))).json();
       const { employee } = await seedEmployee();
 
-      const netTooHigh = await addStub(jsonRequest({ employeeId: employee.id, grossPay: '1000', netPay: '1200' }), { params: { id: run.id } });
+      const netTooHigh = await addStub(jsonRequest({ employeeId: employee.id, salary: '1000', federalTax: '1200' }), { params: { id: run.id } });
       expect(netTooHigh.status).toBe(400);
+      const noEarnings = await addStub(jsonRequest({ employeeId: employee.id, federalTax: '10' }), { params: { id: run.id } });
+      expect(noEarnings.status).toBe(400);
 
-      const ok = await addStub(jsonRequest({ employeeId: employee.id, grossPay: '4000', netPay: '3100.50' }), { params: { id: run.id } });
+      const ok = await addStub(jsonRequest({ employeeId: employee.id, salary: '4000', federalTax: '899.50' }), { params: { id: run.id } });
       expect(ok.status).toBe(201);
-      const dup = await addStub(jsonRequest({ employeeId: employee.id, grossPay: '4000', netPay: '3100' }), { params: { id: run.id } });
+      const dup = await addStub(jsonRequest({ employeeId: employee.id, salary: '4000' }), { params: { id: run.id } });
       expect(dup.status).toBe(409);
 
       const dupRun = await createPayRun(jsonRequest({ payPeriodStart: '2026-02-01', payPeriodEnd: '2026-02-15', payDate: '2026-02-21' }));
@@ -307,11 +309,11 @@ describe('Portal rules added in the design-system pass', () => {
       // Processing locks the run; reopening unlocks it.
       expect((await updatePayRun(jsonRequest({ status: 'processed' }), { params: { id: run.id } })).status).toBe(200);
       const { employee: second } = await seedEmployee();
-      expect((await addStub(jsonRequest({ employeeId: second.id, grossPay: '10', netPay: '9' }), { params: { id: run.id } })).status).toBe(409);
+      expect((await addStub(jsonRequest({ employeeId: second.id, salary: '10', medicare: '1' }), { params: { id: run.id } })).status).toBe(409);
       await updatePayRun(jsonRequest({ status: 'draft' }), { params: { id: run.id } });
-      expect((await addStub(jsonRequest({ employeeId: second.id, grossPay: '10', netPay: '9' }), { params: { id: run.id } })).status).toBe(201);
+      expect((await addStub(jsonRequest({ employeeId: second.id, salary: '10', medicare: '1' }), { params: { id: run.id } })).status).toBe(201);
 
-      const missingRun = await addStub(jsonRequest({ employeeId: employee.id, grossPay: '1', netPay: '1' }), { params: { id: '00000000-0000-4000-8000-000000000000' } });
+      const missingRun = await addStub(jsonRequest({ employeeId: employee.id, salary: '1' }), { params: { id: '00000000-0000-4000-8000-000000000000' } });
       expect(missingRun.status).toBe(404);
     });
   });

@@ -6,12 +6,27 @@ import { useAction, useResource } from '@/lib/client/api';
 import { fullName, statusOf } from '@/lib/status';
 import { Button } from '@/components/ui/Button';
 import { FormStatus } from '@/components/ui/forms';
-import { inputClass, borderClass, SelectField, TextField } from '@/components/ui/fields';
+import { inputClass, borderClass, FieldRow, SelectField, TextField } from '@/components/ui/fields';
 import { Alert, Chip, Loading, PageHeader, Panel } from '@/components/ui/ui';
+import { W4Fields, readW4 } from '@/components/payroll/W4Fields';
+import { PAY_FREQUENCY_LABELS, type PayFrequency, type TaxSetup } from '@/lib/payroll/w4';
 import { EMPLOYEE_LABELS, EmployeeFields, OPTIONAL_EMPLOYEE_FIELDS, type EmployeeValues } from '../EmployeeForm';
 
 interface Detail {
-  employee: EmployeeValues & { id: string; firstName: string; lastName: string; email: string; status: string; userId: string | null };
+  employee: EmployeeValues & {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    status: string;
+    userId: string | null;
+    payType: 'hourly' | 'salary' | null;
+    payRate: string | null;
+    annualSalary: string | null;
+    payFrequency: PayFrequency | null;
+    workState: string | null;
+    w4: TaxSetup | null;
+  };
   access: { status: 'none' | 'active' | 'disabled'; role: 'admin' | 'employee' | null; email: string | null };
   isSelf: boolean;
 }
@@ -234,6 +249,125 @@ function EditPanel({ detail, reload }: { detail: Detail; reload: () => Promise<v
   );
 }
 
+const PAY_LABELS: Record<string, string> = {
+  payType: 'Pay type',
+  payRate: 'Hourly rate',
+  annualSalary: 'Yearly salary',
+  payFrequency: 'Pay frequency',
+  workState: 'Work state',
+  federal: 'Federal W-4',
+  state: 'State withholding',
+};
+
+/** How the employee is paid and taxed. Pay stubs fill in from this. */
+function PayPanel({ detail, reload }: { detail: Detail; reload: () => Promise<void> }) {
+  const action = useAction();
+  const { employee } = detail;
+  const [payType, setPayType] = useState<'hourly' | 'salary'>(employee.payType ?? 'hourly');
+  const [workState, setWorkState] = useState(employee.workState ?? '');
+  const setup = employee.w4 ?? {};
+  const fromEmployee = setup.federal?.submittedBy === 'employee' && setup.federal.submittedAt;
+
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const body = {
+      payType,
+      payRate: payType === 'hourly' ? Number(form.get('payRate') || 0) : null,
+      annualSalary: payType === 'salary' ? Number(form.get('annualSalary') || 0) : null,
+      payFrequency: String(form.get('payFrequency') ?? ''),
+      workState: workState.trim().toUpperCase(),
+      ...readW4(form),
+    };
+    const result = await action.run('pay', `/api/employees/${employee.id}/pay`, { method: 'PUT', body }, 'Saved. New pay stubs use this setup.');
+    if (result.ok) await reload();
+  }
+
+  return (
+    <Panel
+      title="Pay and tax"
+      description={
+        fromEmployee
+          ? `Their W-4 below was filled in by them on ${new Date(fromEmployee).toLocaleDateString('en-US')}. Saving here keeps it unless you change it.`
+          : 'Hourly or salaried, how often they are paid, and the withholding from their W-4.'
+      }
+    >
+      <form onSubmit={save} noValidate className="grid gap-6">
+        <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={PAY_LABELS} />
+        <FieldRow cols={3}>
+          <SelectField
+            name="payType"
+            label="Pay type"
+            required
+            value={payType}
+            onChange={(e) => setPayType(e.target.value as 'hourly' | 'salary')}
+            options={[
+              { value: 'hourly', label: 'Hourly' },
+              { value: 'salary', label: 'Salary' },
+            ]}
+            errors={action.fieldErrors}
+          />
+          {payType === 'hourly' ? (
+            <TextField
+              key="rate"
+              name="payRate"
+              label="Hourly rate (USD)"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="0.01"
+              required
+              defaultValue={employee.payRate ?? ''}
+              errors={action.fieldErrors}
+              hint="Overtime is paid at 1.5×."
+            />
+          ) : (
+            <TextField
+              key="salary"
+              name="annualSalary"
+              label="Yearly salary (USD)"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="0.01"
+              required
+              defaultValue={employee.annualSalary ?? ''}
+              errors={action.fieldErrors}
+              hint="Split evenly across the year's pay periods."
+            />
+          )}
+          <SelectField
+            name="payFrequency"
+            label="Paid"
+            required
+            defaultValue={employee.payFrequency ?? 'biweekly'}
+            options={Object.entries(PAY_FREQUENCY_LABELS).map(([value, label]) => ({ value, label }))}
+            errors={action.fieldErrors}
+          />
+        </FieldRow>
+        <TextField
+          name="workState"
+          label="Work state"
+          required
+          maxLength={2}
+          placeholder="TX"
+          value={workState}
+          onChange={(e) => setWorkState(e.target.value.toUpperCase())}
+          errors={action.fieldErrors}
+          hint="Two-letter code of the state they work in. It decides state income tax."
+          className="sm:max-w-xs"
+        />
+        <W4Fields setup={setup} workState={workState.trim().toUpperCase()} errors={action.fieldErrors} />
+        <div className="flex justify-end border-t border-line pt-6">
+          <Button type="submit" busy={action.busy === 'pay'} busyLabel="Saving">
+            Save pay and tax
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
 function EmployeeDetail() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
@@ -263,6 +397,7 @@ function EmployeeDetail() {
       <div className="grid gap-6">
         <AccessPanel detail={data} reload={reload} />
         <EditPanel detail={data} reload={reload} />
+        <PayPanel detail={data} reload={reload} />
       </div>
     </>
   );

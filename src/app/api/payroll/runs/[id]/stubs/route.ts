@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { db } from '@/db';
-import { payRuns, payStubs } from '@/db/schema';
+import { employees, payRuns, payStubs } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-
-const createSchema = z
-  .object({
-    employeeId: z.string().uuid('Choose an employee.'),
-    grossPay: z.coerce.number().nonnegative('Gross pay can’t be negative.'),
-    netPay: z.coerce.number().nonnegative('Net pay can’t be negative.'),
-  })
-  .refine((v) => v.netPay <= v.grossPay, { message: 'Net pay can’t be more than gross pay.', path: ['netPay'] });
+import { buildStub, stubInputSchema } from '@/lib/payroll/stub';
+import { taxSetupOf } from '@/lib/payroll/setup';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const gate = await requireAdmin();
   if (!gate.ok) return NextResponse.json({ message: gate.message }, { status: gate.status });
 
-  const body = createSchema.safeParse(await request.json());
+  const body = stubInputSchema.safeParse(await request.json());
   if (!body.success) {
     return NextResponse.json({ message: 'Invalid input', errors: body.error.flatten() }, {
       status: 400,
@@ -40,13 +33,27 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     );
   }
 
+  const [employee] = await db.select({ workState: employees.workState, w4: employees.w4 }).from(employees).where(eq(employees.id, body.data.employeeId)).limit(1);
+  if (!employee) return NextResponse.json({ message: 'Employee not found', errors: { fieldErrors: { employeeId: ['Choose an employee.'] } } }, { status: 400 });
+
+  // The stub shows the filing status and state on file unless HR gave others.
+  const built = buildStub({
+    ...body.data,
+    filingStatus: body.data.filingStatus ?? taxSetupOf(employee.w4).federal?.filingStatus,
+    stateCode: body.data.stateCode ?? employee.workState ?? undefined,
+  });
+  if (built.error) {
+    return NextResponse.json({ message: built.error.message, errors: { fieldErrors: { [built.error.field]: [built.error.message] } } }, { status: 400 });
+  }
+
   const [stub] = await db
     .insert(payStubs)
     .values({
       payRunId: params.id,
       employeeId: body.data.employeeId,
-      grossPay: String(body.data.grossPay),
-      netPay: String(body.data.netPay),
+      grossPay: String(built.grossPay),
+      netPay: String(built.netPay),
+      deductions: built.detail,
     })
     .returning();
 

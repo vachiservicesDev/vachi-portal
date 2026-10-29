@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useResource } from '@/lib/client/api';
+import { Button } from '@/components/ui/Button';
+import { StatementView } from '@/components/payroll/StatementView';
 import { Alert, DataTable, DateRange, EmptyState, Loading, PageHeader, When, formatMoney } from '@/components/ui/ui';
 
 interface Stub {
@@ -14,13 +17,14 @@ interface Stub {
 
 export default function PayrollPage() {
   const { data, error, loading } = useResource<{ stubs: Stub[] }>('/api/payroll/stubs/me');
+  const [open, setOpen] = useState<string | null>(null);
   const stubs = data?.stubs ?? [];
   const ytdYear = String(new Date().getFullYear());
   const ytd = stubs.filter((s) => s.payDate?.startsWith(ytdYear)).reduce((acc, s) => ({ gross: acc.gross + Number(s.grossPay), net: acc.net + Number(s.netPay) }), { gross: 0, net: 0 });
 
   return (
     <>
-      <PageHeader eyebrow="Work and pay" title="Pay stubs" lead="Your pay stubs, newest first. If something looks wrong, message HR." />
+      <PageHeader eyebrow="Work and pay" title="Pay stubs" lead="Your earnings statements, newest first, with year-to-date totals. View one to see every line, or download it as a PDF. If something looks wrong, message HR." />
       {error && <Alert title="Couldn't load your pay stubs">{error}</Alert>}
       {loading && !data ? (
         <Loading />
@@ -47,8 +51,23 @@ export default function PayrollPage() {
               { header: 'Pay period', cell: (s) => <DateRange from={s.payPeriodStart} to={s.payPeriodEnd} /> },
               { header: 'Gross pay', align: 'right', cell: (s) => formatMoney(s.grossPay) },
               { header: 'Net pay', align: 'right', cell: (s) => formatMoney(s.netPay) },
+              {
+                header: 'Statement',
+                align: 'right',
+                cell: (s) => (
+                  <span className="inline-flex items-center gap-3">
+                    <Button variant="secondary" size="sm" onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
+                      {open === s.id ? 'Hide' : 'View'}
+                    </Button>
+                    <a href={`/api/payroll/stubs/${s.id}/pdf`} className="text-sm font-medium text-navy-700 underline">
+                      PDF
+                    </a>
+                  </span>
+                ),
+              },
             ]}
           />
+          {open && <StatementView key={open} stubId={open} />}
         </div>
       )}
     </>

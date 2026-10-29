@@ -25,6 +25,7 @@ const APP_TABLES = [
   'documents',
   'employees',
   'profiles',
+  'company_settings',
 ];
 
 /** Wipes every app table between tests. Guarded by setup.ts's DATABASE_URL check. */
