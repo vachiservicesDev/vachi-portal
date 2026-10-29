@@ -4,6 +4,7 @@ import { auditLogs, employees, notifications, profiles } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { POST as createEmployee, GET as listEmployees } from '@/app/api/employees/route';
 import { POST as inviteEmployee } from '@/app/api/employees/[id]/invite/route';
+import { POST as forgotPassword } from '@/app/api/auth/forgot-password/route';
 import { POST as createTimesheet } from '@/app/api/timesheets/route';
 import { POST as addEntry } from '@/app/api/timesheets/[id]/entries/route';
 import { POST as submitTimesheet } from '@/app/api/timesheets/[id]/submit/route';
@@ -37,6 +38,13 @@ const authAdmin = {
   createUser: vi.fn(),
   updateUserById: vi.fn(),
 };
+// The portal's own mailer: configured, and records what would have been sent.
+const sentMail = vi.fn(async (_to: string, _mail: { subject: string; html: string; text: string }) => undefined);
+vi.mock('@/lib/email/portal-mail', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/email/portal-mail')>()),
+  smtpConfigured: () => true,
+  sendPortalMail: (to: string, mail: { subject: string; html: string; text: string }) => sentMail(to, mail),
+}));
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ auth: { admin: authAdmin, resetPasswordForEmail: vi.fn(async () => ({ error: null })) } }),
 }));
@@ -67,13 +75,14 @@ describe('Portal rules added in the design-system pass', () => {
     it('a shareable invite link creates the login, a profile and links the employee', async () => {
       const { employee } = await seedEmployee({ linkToProfile: false, email: 'new.hire@example.com' });
       const newUserId = '7a0f6f5e-0c51-4bb1-9f0e-2a4d8b7f7c11';
-      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: newUserId }, properties: { action_link: 'https://auth.test/verify?token=abc' } }, error: null });
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: newUserId }, properties: { hashed_token: 'abc' } }, error: null });
 
       const res = await inviteEmployee(jsonRequest({ mode: 'link' }), { params: { id: employee.id } });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.outcome).toBe('link');
-      expect(body.link).toContain('token=abc');
+      expect(body.link).toMatch(/\/auth\/confirm\?token_hash=abc&type=invite&next=%2Fset-password$/);
+      expect(sentMail).not.toHaveBeenCalled();
       expect(authAdmin.generateLink).toHaveBeenCalledWith(expect.objectContaining({ type: 'invite', email: 'new.hire@example.com' }));
 
       const [linked] = await db.select().from(employees).where(eq(employees.id, employee.id));
@@ -82,15 +91,60 @@ describe('Portal rules added in the design-system pass', () => {
       expect(profile.role).toBe('employee');
     });
 
+    it('"Email an invite" sends a welcome email from the portal, never through Supabase', async () => {
+      const { employee } = await seedEmployee({ linkToProfile: false, email: 'welcome@example.com' });
+      await db.update(employees).set({ firstName: 'Priya' }).where(eq(employees.id, employee.id));
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: '0c9d8e7f-1a2b-4c3d-8e9f-0a1b2c3d4e5f' }, properties: { hashed_token: 'tok' } }, error: null });
+
+      const res = await inviteEmployee(jsonRequest({ mode: 'email' }), { params: { id: employee.id } });
+      expect(res.status).toBe(200);
+      expect((await res.json()).outcome).toBe('emailed');
+      expect(authAdmin.inviteUserByEmail).not.toHaveBeenCalled();
+      expect(sentMail).toHaveBeenCalledTimes(1);
+      const [to, mail] = sentMail.mock.calls[0];
+      expect(to).toBe('welcome@example.com');
+      expect(mail.subject).toMatch(/Welcome/);
+      expect(mail.text).toContain('Welcome aboard, Priya!');
+      expect(mail.text).toMatch(/\/auth\/confirm\?token_hash=tok&type=invite/);
+    });
+
+    it('a failed send is reported and leaves the employee unlinked', async () => {
+      const { employee } = await seedEmployee({ linkToProfile: false, email: 'bounce@example.com' });
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: '1d2e3f40-5a6b-4c7d-8e9f-a0b1c2d3e4f5' }, properties: { hashed_token: 't' } }, error: null });
+      sentMail.mockRejectedValueOnce(new Error('535 bad credentials'));
+
+      const res = await inviteEmployee(jsonRequest({ mode: 'email' }), { params: { id: employee.id } });
+      expect(res.status).toBe(502);
+      const [row] = await db.select().from(employees).where(eq(employees.id, employee.id));
+      expect(row.userId).toBeNull();
+    });
+
+    it('"Forgot your password?" emails a reset only to an address with a login, answering the same either way', async () => {
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: null, properties: null }, error: { message: 'User not found' } });
+      const unknown = await forgotPassword(jsonRequest({ email: 'nobody@example.com' }));
+      expect(unknown.status).toBe(200);
+      expect(sentMail).not.toHaveBeenCalled();
+
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: 'u1' }, properties: { hashed_token: 'reset' } }, error: null });
+      const known = await forgotPassword(jsonRequest({ email: 'Someone@Example.com' }));
+      expect(known.status).toBe(200);
+      expect(sentMail).toHaveBeenCalledWith('someone@example.com', expect.objectContaining({ subject: expect.stringMatching(/Reset/) }));
+      expect(sentMail.mock.calls[0][1].text).toMatch(/token_hash=reset&type=recovery/);
+
+      const again = await forgotPassword(jsonRequest({ email: 'someone@example.com' }));
+      expect(again.status).toBe(429);
+    });
+
     it('never downgrades an existing admin login when linking it to an employee', async () => {
       const existingAdmin = await seedProfile({ role: 'admin', email: 'boss@example.com' });
       const { employee } = await seedEmployee({ linkToProfile: false, email: 'boss@example.com' });
-      authAdmin.inviteUserByEmail.mockResolvedValueOnce({ data: { user: null }, error: { message: 'A user with this email address has already been registered' } });
-      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: existingAdmin.id }, properties: { action_link: 'x' } }, error: null });
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: null, properties: null }, error: { message: 'A user with this email address has already been registered' } });
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: existingAdmin.id }, properties: { hashed_token: 'x' } }, error: null });
 
       const res = await inviteEmployee(jsonRequest({ mode: 'email' }), { params: { id: employee.id } });
       expect(res.status).toBe(200);
       expect((await res.json()).outcome).toBe('existing-account');
+      expect(sentMail).not.toHaveBeenCalled();
       const [profile] = await db.select().from(profiles).where(eq(profiles.id, existingAdmin.id));
       expect(profile.role).toBe('admin');
     });
@@ -98,7 +152,7 @@ describe('Portal rules added in the design-system pass', () => {
     it('a reset for a linked employee goes to the login email set in Supabase, and syncs it', async () => {
       const { employee, profile } = await seedEmployee({ email: 'old@example.com' });
       authAdmin.getUserById.mockResolvedValueOnce({ data: { user: { id: profile!.id, email: 'New@Example.com' } }, error: null });
-      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: profile!.id }, properties: { action_link: 'https://auth.test/r' } }, error: null });
+      authAdmin.generateLink.mockResolvedValueOnce({ data: { user: { id: profile!.id }, properties: { hashed_token: 'r' } }, error: null });
 
       const res = await inviteEmployee(jsonRequest({ mode: 'link' }), { params: { id: employee.id } });
       expect(res.status).toBe(200);

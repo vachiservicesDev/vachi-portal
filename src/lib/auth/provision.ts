@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { employees, profiles } from '@/db/schema';
+import { confirmUrl, resetEmail, sendPortalMail, smtpConfigured, welcomeEmail } from '@/lib/email/portal-mail';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 type Employee = typeof employees.$inferSelect;
@@ -17,8 +18,12 @@ export type InviteResult =
 /**
  * Gives an employee a portal login.
  *
- * - "email" asks Supabase to email an invite (needs SMTP set up in Supabase for real addresses).
+ * - "email" sends a welcome email (or, once they have a login, a password-reset email) from the
+ *   portal's own SMTP account, the company Gmail, rather than Supabase's mailer.
  * - "link" returns the same one-time link for HR to share another way; nothing is emailed.
+ *
+ * Links go straight to this app's /auth/confirm with a token hash, so they work whatever
+ * Supabase's Site URL is set to.
  *
  * If the address already has a Supabase login (for example a website admin), that login is
  * linked instead and they keep their existing password. A profile row is always created here
@@ -29,8 +34,10 @@ export async function inviteEmployee(employee: Employee, mode: 'email' | 'link',
   if (employee.status === 'inactive') {
     return { ok: false, status: 409, message: 'This employee is inactive. Set them to active before inviting them.' };
   }
+  if (mode === 'email' && !smtpConfigured()) {
+    return { ok: false, status: 503, message: "The portal's email account isn't set up yet. Use \"Create invite link instead\" and send the link yourself." };
+  }
   const email = employee.email.toLowerCase();
-  const redirectTo = `${appUrl.replace(/\/+$/, '')}/auth/confirm?next=/set-password`;
   const admin = createAdminClient();
   const meta = { first_name: employee.firstName, last_name: employee.lastName };
 
@@ -43,46 +50,48 @@ export async function inviteEmployee(employee: Employee, mode: 'email' | 'link',
     }
     const loginEmail = (found.user.email ?? email).toLowerCase();
     if (loginEmail !== email) await syncLoginEmail(employee.id, employee.userId, loginEmail);
+    const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email: loginEmail });
+    if (error) return { ok: false, status: 502, message: `Supabase couldn't create a sign-in link: ${error.message}` };
+    const link = confirmUrl(appUrl, data.properties.hashed_token, 'recovery');
     if (mode === 'email') {
-      const { error } = await admin.auth.resetPasswordForEmail(loginEmail, { redirectTo });
-      if (error) return { ok: false, status: 502, message: `Supabase couldn't send the email: ${error.message}` };
+      const sent = await send(loginEmail, resetEmail(employee.firstName, link));
+      if (!sent.ok) return sent;
       return { ok: true, outcome: 'emailed', userId: employee.userId };
     }
-    const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email: loginEmail, options: { redirectTo } });
-    if (error) return { ok: false, status: 502, message: `Supabase couldn't create a sign-in link: ${error.message}` };
-    return { ok: true, outcome: 'link', link: data.properties.action_link, userId: employee.userId };
+    return { ok: true, outcome: 'link', link, userId: employee.userId };
   }
 
-  let userId: string | undefined;
-  let link: string | undefined;
-  let outcome: 'emailed' | 'link' | 'existing-account' = mode === 'email' ? 'emailed' : 'link';
+  const invited = await admin.auth.admin.generateLink({ type: 'invite', email, options: { data: meta } });
+  if (invited.error && !/already been registered|already registered|exists/i.test(invited.error.message)) {
+    return { ok: false, status: 502, message: `Supabase couldn't create the invite: ${invited.error.message}` };
+  }
 
-  if (mode === 'email') {
-    const { data, error } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo, data: meta });
-    if (error && !/already been registered|already registered|exists/i.test(error.message)) {
-      return { ok: false, status: 502, message: `Supabase couldn't send the invite: ${error.message}` };
+  if (!invited.error && invited.data.user) {
+    const link = confirmUrl(appUrl, invited.data.properties.hashed_token, 'invite');
+    if (mode === 'email') {
+      const sent = await send(email, welcomeEmail(employee.firstName, link));
+      if (!sent.ok) return sent;
     }
-    userId = data?.user?.id;
-  } else {
-    const { data, error } = await admin.auth.admin.generateLink({ type: 'invite', email, options: { redirectTo, data: meta } });
-    if (error && !/already been registered|already registered|exists/i.test(error.message)) {
-      return { ok: false, status: 502, message: `Supabase couldn't create the invite link: ${error.message}` };
-    }
-    userId = data?.user?.id;
-    link = data?.properties?.action_link;
+    await linkEmployeeToUser(employee.id, invited.data.user.id, email);
+    return { ok: true, outcome: mode === 'email' ? 'emailed' : 'link', link: mode === 'link' ? link : undefined, userId: invited.data.user.id };
   }
 
-  if (!userId) {
-    // The address already has a login. Look it up without sending anything, then link it.
-    const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
-    if (error || !data.user) return { ok: false, status: 502, message: `Supabase couldn't find the existing login: ${error?.message ?? 'no user'}` };
-    userId = data.user.id;
-    outcome = mode === 'link' ? 'link' : 'existing-account';
-    link = mode === 'link' ? data.properties.action_link : undefined;
-  }
+  // The address already has a login. Look it up (generating a link sends nothing), then link it.
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email });
+  if (error || !data.user) return { ok: false, status: 502, message: `Supabase couldn't find the existing login: ${error?.message ?? 'no user'}` };
+  await linkEmployeeToUser(employee.id, data.user.id, email);
+  if (mode === 'link') return { ok: true, outcome: 'link', link: confirmUrl(appUrl, data.properties.hashed_token, 'recovery'), userId: data.user.id };
+  return { ok: true, outcome: 'existing-account', userId: data.user.id };
+}
 
-  await linkEmployeeToUser(employee.id, userId, email);
-  return { ok: true, outcome, link, userId };
+async function send(to: string, mail: Parameters<typeof sendPortalMail>[1]): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  try {
+    await sendPortalMail(to, mail);
+    return { ok: true };
+  } catch (err) {
+    console.error('[invite] email failed', err);
+    return { ok: false, status: 502, message: "The email couldn't be sent. Try again, or use \"Create invite link instead\"." };
+  }
 }
 
 // No 0/O or 1/l/I, so a password read off a screen or over the phone is typed right the first time.
