@@ -161,6 +161,14 @@ describe('Portal rules added in the design-system pass', () => {
       expect(taken.status).toBe(409);
     });
 
+    it('a login still on its starting password is refused by the API until it is changed', async () => {
+      const { profile } = await seedEmployee();
+      setCurrentUser(profile!.id, { must_change_password: true });
+      expect((await myGreenCard()).status).toBe(403);
+      setCurrentUser(profile!.id, { must_change_password: false });
+      expect((await myGreenCard()).status).not.toBe(403);
+    });
+
     it('refuses to invite an inactive employee and is admin-only', async () => {
       const { employee, profile } = await seedEmployee({ linkToProfile: false });
       await db.update(employees).set({ status: 'inactive' }).where(eq(employees.id, employee.id));

@@ -5,6 +5,7 @@ import { buttonClass } from '@/components/ui/Button';
 import { AppNav, type NavGroup } from '@/components/shell/AppNav';
 import { NoAccess } from '@/components/shell/NoAccess';
 import { homeFor, requireSession } from '@/lib/auth/session';
+import { mustChangePassword } from '@/lib/auth/requireAdmin';
 import { signOutAction } from '../actions';
 
 const WEBSITE_URL = process.env.NEXT_PUBLIC_WEBSITE_URL || 'https://vachiservices.com';
@@ -95,7 +96,7 @@ export default async function PortalLayout({ children }: { children: React.React
   // Sessions survive deactivation, so this is checked on every page load, not just at sign-in.
   if (!session.profile.isActive) redirect('/auth/signout?reason=deactivated');
   // Logins HR created with a starting password must choose their own before using the portal.
-  if (session.user.user_metadata?.must_change_password) redirect('/set-password');
+  if (mustChangePassword(session.user)) redirect('/set-password');
 
   const isAdmin = session.profile.role === 'admin';
   const groups = isAdmin ? adminNav(session.unread) : employeeNav(session.unread);
