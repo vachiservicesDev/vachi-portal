@@ -135,7 +135,7 @@ export function stateWithholding(state: string | null | undefined, setup: TaxSet
   if (!state) return null;
   if (NO_WAGE_TAX_STATES.includes(state)) return 0;
   const s = setup.state ?? stateWithholdingSchema.parse({});
-  if (s.mode === 'none') return null;
+  // 'none' was the old form's "not set up yet": it now means the state's formula.
   if (s.exempt) return round(s.extra);
   if (s.mode === 'percent') return round((input.wages * s.value) / 100 + s.extra);
   if (s.mode === 'amount') return round(s.value + s.extra);

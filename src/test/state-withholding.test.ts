@@ -32,6 +32,8 @@ describe('state withholding, 2026 formulas', () => {
     expect(run('CA', { exempt: true, extra: 5 })).toBe(5);
     expect(run('CA', { mode: 'amount', value: 40, extra: 5 })).toBe(45);
     expect(run('CA', { mode: 'percent', value: 2 })).toBe(40);
+    // Saved before the formulas existed as "not set up yet": now uses the formula.
+    expect(run('CA', { mode: 'none', allowances: 1 })).toBe(BIWEEKLY_2000.CA);
   });
 
   it('Iowa matches the Department of Revenue 2026 examples', () => {

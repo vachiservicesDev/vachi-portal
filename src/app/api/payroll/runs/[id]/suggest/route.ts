@@ -79,7 +79,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       !employee.payType && 'pay type and rate',
       !taxSetupOf(employee.w4).federal && 'federal W-4',
       !employee.workState && 'work state',
-      employee.workState && STATE_RULES[employee.workState] && !taxSetupOf(employee.w4).state && `${STATE_RULES[employee.workState].form} state withholding form`,
+      employee.workState && STATE_RULES[employee.workState] && (taxSetupOf(employee.w4).state?.mode ?? 'none') === 'none' && `${STATE_RULES[employee.workState].form} state withholding form`,
       !employee.address && 'mailing address',
     ].filter(Boolean),
   });
