@@ -11,6 +11,7 @@ import { GET as adminW2Pdf } from '@/app/api/payroll/w2/[employeeId]/[year]/pdf/
 import { GET as report } from '@/app/api/payroll/reports/route';
 import { buildRegister, buildW2, figuresOf, periodRange, type PaidStub } from '@/lib/payroll/totals';
 import { buildStub, stubInputSchema } from '@/lib/payroll/stub';
+import { renderW2Pdf } from '@/lib/payroll/yearEndPdf';
 import { resetDb, seedEmployee, seedProfile } from './db';
 import { getRequest, jsonRequest } from './http';
 import { setCurrentUser } from './mockAuth';
@@ -69,6 +70,22 @@ describe('W-2 boxes', () => {
     expect(w2.box3).toBe(184_500);
     expect(w2.box5).toBe(200_000);
     expect(w2.states).toEqual([{ code: 'PA', wages: 200_000, tax: 6140 }]);
+  });
+});
+
+describe('W-2 edge cases', () => {
+  it('keeps the pay-time state when nothing was withheld, so a later move does not shift wages', () => {
+    const f = figuresOf(stub({ salary: 4000, stateCode: 'TX' }), 'CA');
+    expect(f.stateCode).toBe('TX');
+  });
+
+  it('reports local wages only for stubs with local tax, and puts a third state on a second W-2', async () => {
+    const f = (state: string, local = 0) => figuresOf(stub({ salary: 1000, stateTax: 10, stateCode: state, localTax: local }), null);
+    const w2 = buildW2(2026, [f('CA', 5), f('NY'), f('PA')]);
+    expect(w2).toMatchObject({ localWages: 1000, local: 5 });
+    const { PDFDocument } = await import('pdf-lib');
+    const bytes = await renderW2Pdf(w2, { name: 'Pat Lee', address: null, ssn: 'XXX-XX-1234', controlNumber: 'X' }, { name: 'Co', address: '', ein: '', phone: '' });
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(2);
   });
 });
 

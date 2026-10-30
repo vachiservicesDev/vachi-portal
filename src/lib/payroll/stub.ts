@@ -47,6 +47,8 @@ export interface StubDetail {
   paymentMethod: 'direct_deposit' | 'check';
   /** Shown like ADP's "Taxable marital status"; the withholding itself still comes from HR. */
   filingStatus?: FilingStatus;
+  /** The work state at pay time, kept even when nothing was withheld, so W-2s and reports don't move wages after a relocation. */
+  stateCode?: string;
   /** Last four digits of the deposit account, for the deposit advice. Never the full number. */
   depositLast4?: string;
 }
@@ -134,6 +136,7 @@ export function buildStub(input: StubInput): { detail: StubDetail; grossPay: num
     deductions,
     paymentMethod: input.paymentMethod,
     ...(input.filingStatus && { filingStatus: input.filingStatus }),
+    ...(input.stateCode && { stateCode: input.stateCode }),
     ...(input.paymentMethod === 'direct_deposit' && input.depositLast4 && { depositLast4: input.depositLast4 }),
   };
 
