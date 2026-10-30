@@ -35,6 +35,7 @@ function adminNav(unread: number): NavGroup[] {
       items: [
         { href: '/admin/timesheets', label: 'Timesheets' },
         { href: '/admin/payroll', label: 'Payroll' },
+        { href: '/admin/company', label: 'Company details' },
         { href: '/admin/training', label: 'Training' },
         { href: '/admin/training/summaries', label: 'Weekly summaries' },
         { href: '/admin/reviews', label: 'Performance reviews' },
@@ -83,6 +84,7 @@ function employeeNav(unread: number): NavGroup[] {
       items: [
         { href: '/messages', label: 'Messages' },
         { href: '/notifications', label: 'Notifications', badge: unread ? `${unread} new` : undefined },
+        { href: '/profile', label: 'My profile' },
       ],
     },
   ];

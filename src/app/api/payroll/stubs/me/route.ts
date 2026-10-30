@@ -3,8 +3,9 @@ import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { employees, payRuns, payStubs } from '@/db/schema';
 import { requireActiveUser } from '@/lib/auth/requireAdmin';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
+/** Only stubs in processed pay runs: a draft run can still change before payday. */
 export async function GET() {
   const gate = await requireActiveUser();
   if (!gate.ok) return NextResponse.json({ message: gate.message }, { status: gate.status });
@@ -27,7 +28,7 @@ export async function GET() {
     })
     .from(payStubs)
     .innerJoin(payRuns, eq(payRuns.id, payStubs.payRunId))
-    .where(eq(payStubs.employeeId, employee.id))
+    .where(and(eq(payStubs.employeeId, employee.id), eq(payRuns.status, 'processed')))
     .orderBy(desc(payRuns.payDate));
 
   return NextResponse.json({ stubs });

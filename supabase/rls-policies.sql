@@ -37,6 +37,7 @@ alter table green_card_cases enable row level security;
 alter table messages enable row level security;
 alter table notifications enable row level security;
 alter table audit_logs enable row level security;
+alter table company_settings enable row level security; -- server-only, no policies
 
 -- profiles: a user can see their own row; admins can see all.
 create policy "profiles_select_own" on profiles

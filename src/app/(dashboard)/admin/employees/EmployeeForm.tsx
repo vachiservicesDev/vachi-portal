@@ -1,7 +1,7 @@
 'use client';
 
 import type { FieldErrors } from '@/components/ui/fields';
-import { FieldRow, Fieldset, SelectField, TextField } from '@/components/ui/fields';
+import { FieldRow, Fieldset, SelectField, TextAreaField, TextField } from '@/components/ui/fields';
 import { VISA_TYPES } from '@/lib/status';
 
 export type EmployeeValues = {
@@ -9,6 +9,7 @@ export type EmployeeValues = {
   lastName?: string;
   email?: string;
   phoneNumber?: string | null;
+  address?: string | null;
   position?: string | null;
   department?: string | null;
   startDate?: string | null;
@@ -23,6 +24,7 @@ export const EMPLOYEE_LABELS: Record<string, string> = {
   lastName: 'Last name',
   email: 'Work email',
   phoneNumber: 'Phone',
+  address: 'Mailing address',
   position: 'Position',
   department: 'Department',
   startDate: 'Start date',
@@ -32,7 +34,7 @@ export const EMPLOYEE_LABELS: Record<string, string> = {
   status: 'Status',
 };
 
-export const OPTIONAL_EMPLOYEE_FIELDS = ['phoneNumber', 'position', 'department', 'startDate', 'visaStartDate', 'visaExpiryDate'] as const;
+export const OPTIONAL_EMPLOYEE_FIELDS = ['phoneNumber', 'address', 'position', 'department', 'startDate', 'visaStartDate', 'visaExpiryDate'] as const;
 
 /** The fields shared by "Add employee" and the employee's edit form. */
 export function EmployeeFields({ values = {}, errors, emailLocked }: { values?: EmployeeValues; errors?: FieldErrors; emailLocked?: boolean }) {
@@ -57,6 +59,15 @@ export function EmployeeFields({ values = {}, errors, emailLocked }: { values?: 
           />
           <TextField name="phoneNumber" label="Phone" type="tel" inputMode="tel" defaultValue={values.phoneNumber} errors={errors} maxLength={20} />
         </FieldRow>
+        <TextAreaField
+          name="address"
+          label="Mailing address"
+          rows={3}
+          maxLength={500}
+          defaultValue={values.address ?? undefined}
+          errors={errors}
+          hint="Printed on their pay stubs. Employees can also update it under My profile."
+        />
       </Fieldset>
       <Fieldset legend="Job">
         <FieldRow cols={3}>

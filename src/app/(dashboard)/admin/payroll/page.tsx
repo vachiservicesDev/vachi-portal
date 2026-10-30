@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { formValues, useAction, useResource } from '@/lib/client/api';
+import { StubForm } from './StubForm';
 import { fullName, statusOf } from '@/lib/status';
 import { Button } from '@/components/ui/Button';
-import { FieldRow, SelectField, TextField } from '@/components/ui/fields';
+import { FieldRow, TextField } from '@/components/ui/fields';
 import { FormStatus } from '@/components/ui/forms';
 import { Alert, Chip, DataTable, DateRange, EmptyState, Loading, PageHeader, Panel, When, formatMoney } from '@/components/ui/ui';
 
@@ -33,7 +34,6 @@ interface Stub {
 }
 
 const RUN_LABELS = { payPeriodStart: 'Period starts', payPeriodEnd: 'Period ends', payDate: 'Pay date' };
-const STUB_LABELS = { employeeId: 'Employee', grossPay: 'Gross pay', netPay: 'Net pay' };
 
 function RunDetail({ run, employees, onChange }: { run: PayRun; employees: EmployeeOption[]; onChange: () => void }) {
   const detail = useResource<{ run: PayRun; stubs: Stub[] }>(`/api/payroll/runs/${run.id}`);
@@ -50,14 +50,10 @@ function RunDetail({ run, employees, onChange }: { run: PayRun; employees: Emplo
     if (result.ok) onChange();
   }
 
-  async function addStub(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const result = await action.run('stub', `/api/payroll/runs/${run.id}/stubs`, { body: formValues(form) }, 'Pay stub added. The employee can see it now.');
-    if (result.ok) {
-      form.reset();
-      detail.reload();
-    }
+  async function removeStub(s: Stub) {
+    if (!window.confirm(`Remove the pay stub for ${fullName(s.employeeFirstName, s.employeeLastName)}?`)) return;
+    const result = await action.run(`remove-${s.id}`, `/api/payroll/runs/${run.id}/stubs/${s.id}`, { method: 'DELETE' }, 'Pay stub removed.');
+    if (result.ok) detail.reload();
   }
 
   return (
@@ -94,7 +90,7 @@ function RunDetail({ run, employees, onChange }: { run: PayRun; employees: Emplo
       {detail.loading && !detail.data ? (
         <Loading label="Loading pay stubs" />
       ) : stubs.length === 0 ? (
-        <EmptyState>No pay stubs in this run yet. Add one below.</EmptyState>
+        <EmptyState>No pay stubs in this run yet. Add one below; hours and taxes fill in from each employee&apos;s timesheets and W-4.</EmptyState>
       ) : (
         <DataTable
           caption="Pay stubs in this run"
@@ -104,41 +100,35 @@ function RunDetail({ run, employees, onChange }: { run: PayRun; employees: Emplo
             { header: 'Employee', primary: true, cell: (s) => fullName(s.employeeFirstName, s.employeeLastName) },
             { header: 'Gross pay', align: 'right', cell: (s) => formatMoney(s.grossPay) },
             { header: 'Net pay', align: 'right', cell: (s) => formatMoney(s.netPay) },
+            {
+              header: 'Statement',
+              align: 'right',
+              cell: (s) => (
+                <span className="inline-flex gap-2">
+                  <a className="link" href={`/api/payroll/stubs/${s.id}/pdf?view=1`} target="_blank" rel="noreferrer">
+                    PDF
+                  </a>
+                  {!processed && (
+                    <Button variant="secondary" size="sm" busy={action.busy === `remove-${s.id}`} busyLabel="Removing…" onClick={() => removeStub(s)}>
+                      Remove
+                    </Button>
+                  )}
+                </span>
+              ),
+            },
           ]}
         />
       )}
 
       <div className="mt-5">
-        <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={STUB_LABELS} />
+        <FormStatus error={action.error} success={action.success} />
       </div>
-      {!processed && (
-        <form onSubmit={addStub} noValidate className="mt-8 grid gap-5 border-t border-line pt-6">
-          <h3 className="font-display text-lg font-semibold text-ink">Add a pay stub</h3>
-          {available.length === 0 ? (
-            <p className="text-ink-2">Every active employee already has a stub in this run.</p>
-          ) : (
-            <>
-              <SelectField
-                name="employeeId"
-                label="Employee"
-                required
-                placeholder="Choose an employee"
-                options={available.map((e) => ({ value: e.id, label: fullName(e.firstName, e.lastName) }))}
-                errors={action.fieldErrors}
-              />
-              <FieldRow>
-                <TextField name="grossPay" label="Gross pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} />
-                <TextField name="netPay" label="Net pay (USD)" type="number" inputMode="decimal" min={0} step="0.01" required errors={action.fieldErrors} hint="Can't be more than gross pay." />
-              </FieldRow>
-              <div>
-                <Button type="submit" busy={action.busy === 'stub'} busyLabel="Adding…">
-                  Add pay stub
-                </Button>
-              </div>
-            </>
-          )}
-        </form>
-      )}
+      {!processed &&
+        (available.length === 0 ? (
+          <p className="mt-8 border-t border-line pt-6 text-ink-2">Every active employee already has a stub in this run.</p>
+        ) : (
+          <StubForm runId={run.id} employees={available} onAdded={detail.reload} />
+        ))}
     </Panel>
   );
 }
@@ -169,7 +159,7 @@ export default function AdminPayrollPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Work and pay" title="Payroll" lead="Record each pay run, then add a stub for every employee paid in it. Employees see their stubs under Pay stubs." />
+      <PageHeader eyebrow="Work and pay" title="Payroll" lead="Record each pay run, then add a stub for every employee paid in it. Employees see their stubs, and can download them as PDFs, once the run is marked processed." />
       <div className="grid gap-8">
         <Panel title="Record a pay run">
           <form onSubmit={createRun} noValidate className="grid gap-5">

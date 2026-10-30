@@ -89,7 +89,25 @@ export const employees = pgTable('employees', {
   position: varchar('position', { length: 100 }),
   startDate: date('start_date'),
   profilePictureUrl: text('profile_picture_url'),
+  // Pay and tax setup, used to fill pay stubs. pay_rate is per hour when hourly; annual_salary
+  // when salaried. w4 holds the Form W-4 (2020+) answers; see src/lib/payroll/w4.ts.
+  payType: varchar('pay_type', { length: 10 }), // 'hourly' | 'salary'
+  payRate: decimal('pay_rate', { precision: 10, scale: 2 }),
+  annualSalary: decimal('annual_salary', { precision: 12, scale: 2 }),
+  payFrequency: varchar('pay_frequency', { length: 20 }), // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+  workState: varchar('work_state', { length: 2 }),
+  w4: jsonb('w4'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** The employer details printed on pay stubs. One row, id 1. */
+export const companySettings = pgTable('company_settings', {
+  id: integer('id').primaryKey().default(1),
+  legalName: varchar('legal_name', { length: 200 }).notNull(),
+  address: text('address'),
+  ein: varchar('ein', { length: 20 }),
+  phone: varchar('phone', { length: 30 }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -441,7 +459,7 @@ export const payStubs = pgTable('pay_stubs', {
     .references(() => employees.id, { onDelete: 'cascade' }),
   grossPay: decimal('gross_pay', { precision: 10, scale: 2 }).notNull(),
   netPay: decimal('net_pay', { precision: 10, scale: 2 }).notNull(),
-  deductions: jsonb('deductions').default({}), // { federal_tax, state_tax, fica, benefits, ... }
+  deductions: jsonb('deductions').default({}), // the itemized statement: earnings, taxes, deductions (src/lib/payroll/stub.ts)
   filePath: text('file_path'), // optional PDF in the payroll-documents bucket - upload not yet wired up
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
