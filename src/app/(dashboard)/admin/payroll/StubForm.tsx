@@ -215,7 +215,7 @@ export function StubForm({ runId, employees, onAdded }: { runId: string; employe
                 hint={
                   stateCode && NO_WAGE_TAX_STATES.includes(stateCode)
                     ? `${stateCode} has no state income tax.`
-                    : (autoHint('stateTax', 'from their state withholding setup.') ?? 'Set up their state withholding to calculate this.')
+                    : (autoHint('stateTax', `from the ${stateCode} 2026 formula and their state form.`) ?? 'Enter it, or set their work state to calculate it.')
                 }
               />
               <TextField label="Local tax (USD)" {...money} {...field('localTax')} />

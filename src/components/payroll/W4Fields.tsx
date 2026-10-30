@@ -1,7 +1,9 @@
 'use client';
 
 import { CheckboxField, FieldRow, Fieldset, SelectField, TextField, type FieldErrors } from '@/components/ui/fields';
-import { FILING_STATUSES, NO_WAGE_TAX_STATES, type TaxSetup } from '@/lib/payroll/w4';
+import { useState } from 'react';
+import { FILING_STATUSES, NO_WAGE_TAX_STATES, defaultStateStatus, type TaxSetup } from '@/lib/payroll/w4';
+import { STATE_RULES } from '@/lib/payroll/states/rules';
 
 const money = { type: 'number' as const, inputMode: 'decimal' as const, min: 0, step: '0.01' };
 const str = (n: number | undefined) => (n ? String(n) : '');
@@ -9,8 +11,6 @@ const str = (n: number | undefined) => (n ? String(n) : '');
 /** Form W-4 (2020 or later), steps 1(c) to 4, plus the employee's state withholding form. */
 export function W4Fields({ setup, workState, errors }: { setup: TaxSetup; workState?: string | null; errors?: FieldErrors }) {
   const f = setup.federal;
-  const s = setup.state;
-  const noStateTax = !!workState && NO_WAGE_TAX_STATES.includes(workState);
   return (
     <>
       <Fieldset legend="Federal Form W-4">
@@ -40,27 +40,7 @@ export function W4Fields({ setup, workState, errors }: { setup: TaxSetup; workSt
         <CheckboxField name="w4_exempt" label="Exempt from federal withholding" defaultChecked={f?.exempt} hint="Only if “Exempt” is written on the form. It must be renewed each February." />
       </Fieldset>
 
-      <Fieldset legend="State withholding">
-        {noStateTax ? (
-          <p className="text-ink-2">{workState} has no state income tax on wages, so nothing is withheld.</p>
-        ) : (
-          <FieldRow cols={3}>
-            <SelectField
-              name="st_mode"
-              label="How to withhold"
-              hideOptional
-              defaultValue={s?.mode ?? 'none'}
-              options={[
-                { value: 'none', label: 'Not set up yet' },
-                { value: 'percent', label: 'Percent of taxable pay' },
-                { value: 'amount', label: 'Fixed amount per period' },
-              ]}
-            />
-            <TextField name="st_value" label="Percent or amount" {...money} defaultValue={str(s?.value)} errors={errors} />
-            <TextField name="st_extra" label="Extra per period (USD)" {...money} defaultValue={str(s?.extra)} errors={errors} />
-          </FieldRow>
-        )}
-      </Fieldset>
+      <StateFields key={workState ?? ''} setup={setup} workState={workState} errors={errors} />
     </>
   );
 }
@@ -68,7 +48,20 @@ export function W4Fields({ setup, workState, errors }: { setup: TaxSetup; workSt
 /** Reads W4Fields back into the shape the API expects. */
 export function readW4(form: FormData) {
   const num = (k: string) => Number(form.get(k) || 0);
-  const state = form.has('st_mode') ? { mode: String(form.get('st_mode')), value: num('st_value'), extra: num('st_extra') } : undefined;
+  const opt = (k: string) => (form.get(k) === null || form.get(k) === '' ? undefined : String(form.get(k)));
+  const state = form.has('st_mode')
+    ? {
+        mode: String(form.get('st_mode')),
+        status: opt('st_status'),
+        allowances: opt('st_allowances'),
+        dependents: opt('st_dependents'),
+        amount: opt('st_amount'),
+        locality: opt('st_locality'),
+        exempt: form.get('st_exempt') === 'on',
+        value: num('st_value'),
+        extra: num('st_extra'),
+      }
+    : undefined;
   return {
     federal: {
       filingStatus: String(form.get('w4_filingStatus') || 'single'),
@@ -81,4 +74,84 @@ export function readW4(form: FormData) {
     },
     ...(state && { state }),
   };
+}
+
+/** The work state's own withholding certificate, with the fields that state's formula uses. */
+function StateFields({ setup, workState, errors }: { setup: TaxSetup; workState?: string | null; errors?: FieldErrors }) {
+  const s = setup.state;
+  const [mode, setMode] = useState(s?.mode === 'none' ? 'formula' : (s?.mode ?? 'formula'));
+  const rule = workState ? STATE_RULES[workState] : undefined;
+  if (!workState) return <p className="text-ink-2">Set the work state to see its withholding form.</p>;
+  if (NO_WAGE_TAX_STATES.includes(workState)) {
+    return (
+      <Fieldset legend="State withholding">
+        <p className="text-ink-2">{workState} has no state income tax on wages, so nothing is withheld.</p>
+      </Fieldset>
+    );
+  }
+  const counts = rule ? (Object.entries(rule.fields) as [string, string][]) : [];
+  return (
+    <Fieldset legend={rule ? `${rule.name} withholding (Form ${rule.form})` : `${workState} withholding`}>
+      <input type="hidden" name="st_state" value={workState} />
+      {rule && (
+        <>
+          {rule.statuses && (
+            <SelectField
+              name="st_status"
+              label="Filing status on the state form"
+              hideOptional
+              defaultValue={s?.status || defaultStateStatus(workState, setup.federal)}
+              options={Object.entries(rule.statuses).map(([value, label]) => ({ value, label }))}
+              className="sm:max-w-md"
+            />
+          )}
+          {counts.length > 0 && (
+            <FieldRow cols={counts.length >= 3 ? 3 : 2}>
+              {counts.map(([key, label]) => (
+                <TextField
+                  key={key}
+                  name={`st_${key}`}
+                  label={label}
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step={key === 'amount' ? '0.01' : '1'}
+                  defaultValue={str(s?.[key as 'allowances' | 'dependents' | 'amount'])}
+                  errors={errors}
+                />
+              ))}
+            </FieldRow>
+          )}
+          {rule.localities && (
+            <SelectField
+              name="st_locality"
+              label="County"
+              hideOptional
+              defaultValue={s?.locality ?? ''}
+              placeholder="Choose the county they live in"
+              options={Object.keys(rule.localities).map((c) => ({ value: c, label: c }))}
+              className="sm:max-w-md"
+            />
+          )}
+          <CheckboxField name="st_exempt" label="Exempt from state withholding" defaultChecked={s?.exempt} hint="Only if the state form claims exemption." />
+        </>
+      )}
+      <FieldRow>
+        <SelectField
+          name="st_mode"
+          label="How to calculate"
+          hideOptional
+          value={mode}
+          onChange={(e) => setMode(e.target.value as typeof mode)}
+          options={[
+            ...(rule ? [{ value: 'formula', label: `${rule.name}'s 2026 formula` }] : []),
+            { value: 'percent', label: 'Fixed percent of taxable pay' },
+            { value: 'amount', label: 'Fixed amount per period' },
+          ]}
+        />
+        {mode !== 'formula' && <TextField name="st_value" label={mode === 'percent' ? 'Percent' : 'Amount (USD)'} {...money} defaultValue={str(s?.value)} errors={errors} />}
+      </FieldRow>
+      <TextField name="st_extra" label="Extra state withholding per period (USD)" {...money} defaultValue={str(s?.extra)} errors={errors} className="sm:max-w-xs" />
+    </Fieldset>
+  );
 }

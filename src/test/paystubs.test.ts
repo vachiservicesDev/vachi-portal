@@ -48,10 +48,12 @@ describe('federal withholding (IRS Pub 15-T 2026, percentage method)', () => {
     expect(federalWithholding(500, 'biweekly', w4())).toBe(0);
   });
 
-  it('no-tax states withhold nothing; other states need a setup', () => {
-    expect(stateWithholding(2000, 'TX', undefined)).toBe(0);
-    expect(stateWithholding(2000, 'CA', undefined)).toBeNull();
-    expect(stateWithholding(2000, 'CA', { mode: 'percent', value: 5, extra: 10 })).toBe(110);
+  it('no-tax states withhold nothing; taxing states use their formula, even before the state form is in', () => {
+    const input = { wages: 2000, frequency: 'biweekly' as const, federalTax: 0 };
+    expect(stateWithholding('TX', {}, input)).toBe(0);
+    expect(stateWithholding('CA', {}, input)).toBeGreaterThan(0);
+    expect(stateWithholding('XX', {}, input)).toBeNull();
+    expect(stateWithholding(null, {}, input)).toBeNull();
   });
 
   it('stops Social Security at the wage base and keeps pre-tax deductions out of income tax', () => {
@@ -160,7 +162,17 @@ describe('pay stubs end to end', () => {
     const { run } = await (await createPayRun(jsonRequest({ payPeriodStart: '2026-03-01', payPeriodEnd: '2026-03-15', payDate: '2026-03-15' }))).json();
     const hint = await (await suggest(getRequest(`http://localhost/test?employeeId=${employee.id}`), { params: { id: run.id } })).json();
     expect(hint.salaryPerPeriod).toBe(3250);
-    expect(hint.missing.length).toBeGreaterThan(0); // no W-4, no CA setup
+    expect(hint.missing).toEqual(expect.arrayContaining(['federal W-4', 'DE 4 state withholding form']));
+
+    // The DE 4 answers save with the pay setup and come back for the stub form.
+    const saved = await savePay(
+      put({ payType: 'salary', annualSalary: 78000, payFrequency: 'semimonthly', workState: 'CA', federal: { filingStatus: 'single' }, state: { mode: 'formula', status: 'married', allowances: '2', exempt: false } }),
+      { params: { id: employee.id } },
+    );
+    expect(saved.status).toBe(200);
+    const again = await (await suggest(getRequest(`http://localhost/test?employeeId=${employee.id}`), { params: { id: run.id } })).json();
+    expect(again.setup.state).toMatchObject({ mode: 'formula', status: 'married', allowances: 2 });
+    expect(again.missing).toEqual(['mailing address']);
 
     const { stub } = await (await addStub(jsonRequest({ employeeId: employee.id, salary: 3250 }), { params: { id: run.id } })).json();
     await updateRun(jsonRequest({ status: 'processed' }), { params: { id: run.id } });
