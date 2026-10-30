@@ -15,6 +15,13 @@
       "when": 1793317378323,
       "tag": "0001_pay_and_tax_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793387318246,
+      "tag": "0002_rentals",
+      "breakpoints": true
     }
   ]
 }

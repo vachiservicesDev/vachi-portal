@@ -1,15 +1,35 @@
 import { db } from '@/db';
-import { employees, profiles } from '@/db/schema';
-import { and, eq, ne } from 'drizzle-orm';
+import { employees, profiles, rentalLeases, rentalProperties } from '@/db/schema';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 type Caller = { id: string; role: string };
 
+/** A tenant's landlords: the owners of the homes they have an active lease on. */
+async function landlordsOf(tenantId: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ ownerId: rentalProperties.ownerId })
+    .from(rentalLeases)
+    .innerJoin(rentalProperties, eq(rentalProperties.id, rentalLeases.propertyId))
+    .where(and(eq(rentalLeases.tenantUserId, tenantId), eq(rentalLeases.status, 'active')));
+  return rows.map((r) => r.ownerId);
+}
+
 /**
- * Who a user may message: HR (admins) can message anyone active; employees can message HR only.
- * Names come from the linked employee record when there is one.
+ * Who a user may message: HR (admins) can message anyone active; employees can message HR only;
+ * tenants can message their own landlord only. Names come from the linked employee record when
+ * there is one.
  */
 export async function listPartners(caller: Caller) {
+  if (caller.role === 'tenant') {
+    const owners = await landlordsOf(caller.id);
+    if (!owners.length) return [];
+    return db
+      .select({ id: profiles.id, email: profiles.email, role: profiles.role, firstName: employees.firstName, lastName: employees.lastName })
+      .from(profiles)
+      .leftJoin(employees, eq(employees.userId, profiles.id))
+      .where(and(inArray(profiles.id, owners), eq(profiles.isActive, true)));
+  }
   const rows = await db
     .select({ id: profiles.id, email: profiles.email, role: profiles.role, firstName: employees.firstName, lastName: employees.lastName })
     .from(profiles)
@@ -27,6 +47,7 @@ export async function findPartner(caller: Caller, partnerId: string) {
     .where(eq(profiles.id, partnerId))
     .limit(1);
   if (!row) return null;
+  if (caller.role === 'tenant') return (await landlordsOf(caller.id)).includes(row.id) ? row : null;
   if (caller.role !== 'admin' && row.role !== 'admin') return null;
   return row;
 }

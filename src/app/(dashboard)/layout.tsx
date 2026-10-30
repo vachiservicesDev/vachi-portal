@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { Logo } from '@/components/ui/Logo';
 import { buttonClass } from '@/components/ui/Button';
 import { AppNav, type NavGroup } from '@/components/shell/AppNav';
 import { NoAccess } from '@/components/shell/NoAccess';
 import { homeFor, requireSession } from '@/lib/auth/session';
+import { tenantMayOpen } from '@/lib/auth/tenant-pages';
 import { mustChangePassword } from '@/lib/auth/requireAdmin';
 import { signOutAction } from '../actions';
 
@@ -43,11 +45,28 @@ function adminNav(unread: number): NavGroup[] {
       ],
     },
     {
+      label: 'Rentals',
+      items: [{ href: '/admin/rentals', label: 'Rental homes' }],
+    },
+    {
       label: 'Communication',
       items: [
         { href: '/messages', label: 'Messages' },
         { href: '/notifications', label: 'Notifications', badge: unread ? `${unread} new` : undefined },
         { href: '/admin/audit-log', label: 'Audit log' },
+      ],
+    },
+  ];
+}
+
+function tenantNav(unread: number): NavGroup[] {
+  return [
+    { items: [{ href: '/rental', label: 'My rental', exact: true }] },
+    {
+      label: 'Communication',
+      items: [
+        { href: '/messages', label: 'Message your landlord' },
+        { href: '/notifications', label: 'Notifications', badge: unread ? `${unread} new` : undefined },
       ],
     },
   ];
@@ -102,7 +121,9 @@ export default async function PortalLayout({ children }: { children: React.React
   if (mustChangePassword(session.user)) redirect('/set-password');
 
   const isAdmin = session.profile.role === 'admin';
-  const groups = isAdmin ? adminNav(session.unread) : employeeNav(session.unread);
+  const isTenant = session.profile.role === 'tenant';
+  if (isTenant && !tenantMayOpen(headers().get('x-pathname') ?? '')) redirect('/rental');
+  const groups = isAdmin ? adminNav(session.unread) : isTenant ? tenantNav(session.unread) : employeeNav(session.unread);
 
   return (
     <>
@@ -118,7 +139,7 @@ export default async function PortalLayout({ children }: { children: React.React
             <Link href={homeFor(session.profile.role)} aria-label="Vachi Portal home" className="inline-flex shrink-0 rounded-sm">
               <Logo href={null} priority className="h-8 w-auto sm:h-9" />
             </Link>
-            <span className="t-label hidden rounded-sm bg-navy-50 px-2 py-1 text-navy-700 sm:inline">{isAdmin ? 'Portal admin' : 'Portal'}</span>
+            <span className="t-label hidden rounded-sm bg-navy-50 px-2 py-1 text-navy-700 sm:inline">{isAdmin ? 'Portal admin' : isTenant ? 'Rental portal' : 'Portal'}</span>
           </div>
           <div className="flex items-center gap-1 sm:gap-3">
             <a href={WEBSITE_URL} target="_blank" rel="noopener" className="link hidden min-h-11 items-center text-sm md:inline-flex">
@@ -165,7 +186,7 @@ export default async function PortalLayout({ children }: { children: React.React
       </div>
       <footer className="border-t border-line bg-white">
         <div className="container-page flex flex-col gap-2 py-5 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Vachi Services LLC. For employees and authorized staff only.</p>
+          <p>© {new Date().getFullYear()} Vachi Services LLC. {isTenant ? 'For tenants and their landlord.' : 'For employees and authorized staff only.'}</p>
           <p>
             Need help? <a className="link" href="mailto:info@vachiservices.com">info@vachiservices.com</a>
           </p>

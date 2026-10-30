@@ -46,7 +46,10 @@ export async function requireSession() {
   return session;
 }
 
-/** Where a signed-in user lands: admins on the admin dashboard, everyone else on their home. */
+/** Where a signed-in user lands: admins on the admin dashboard, tenants on their rental, employees on their home. */
 export function homeFor(role: string | null | undefined) {
-  return role === 'admin' ? '/admin' : '/dashboard';
+  if (role === 'admin') return '/admin';
+  if (role === 'tenant') return '/rental';
+  return '/dashboard';
 }
+

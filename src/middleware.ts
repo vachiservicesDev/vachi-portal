@@ -8,6 +8,8 @@ const PUBLIC_PATHS = ['/login', '/auth', '/forgot-password', '/api/auth/forgot-p
 // middleware (backend/middleware/auth.js), which re-fetched the user row
 // from `users` on every request with no session concept at all.
 export async function middleware(request: NextRequest) {
+  // Server layouts can't see the URL; the portal layout reads this to keep tenants on their pages.
+  request.headers.set('x-pathname', request.nextUrl.pathname);
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

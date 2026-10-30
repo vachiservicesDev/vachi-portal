@@ -120,6 +120,27 @@ Vachi Services LLC`;
   return { subject, html, text };
 }
 
+export function tenantWelcomeEmail(name: string, homeName: string, url: string) {
+  const first = name.trim().split(/\s+/)[0] || 'there';
+  const subject = `Your rental portal for ${homeName}`;
+  const intro = `Your landlord has set up an online portal for ${homeName}. You can see your rent and payment history, report anything that needs fixing and pick a time for the repair, and message your landlord, all in one place.`;
+  const html = layout(
+    `Hi ${escape(first)},`,
+    [escape(intro), 'To get started, choose a password for your account. It takes less than a minute.'],
+    { label: 'Set up my account', url },
+    'For your security, this link works once and expires in 24 hours. If it has expired, ask your landlord to send a new one.',
+  );
+  const text = `Hi ${first},
+
+${intro}
+
+To get started, choose a password for your account:
+${url}
+
+For your security, this link works once and expires in 24 hours. If it has expired, ask your landlord to send a new one.`;
+  return { subject, html, text };
+}
+
 /** Sends one email from the portal's SMTP account. Throws when SMTP is missing or the send fails. */
 export async function sendPortalMail(to: string, mail: { subject: string; html: string; text: string }): Promise<void> {
   const user = process.env.SMTP_USER;

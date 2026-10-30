@@ -4,6 +4,11 @@ import { employees, profiles } from '@/db/schema';
 import { sql } from 'drizzle-orm';
 
 const APP_TABLES = [
+  'rent_charges',
+  'repair_requests',
+  'rental_reminders',
+  'rental_leases',
+  'rental_properties',
   'messages',
   'notifications',
   'audit_logs',
@@ -34,7 +39,7 @@ export async function resetDb(): Promise<void> {
 }
 
 interface SeedUserOptions {
-  role?: 'admin' | 'employee';
+  role?: 'admin' | 'employee' | 'tenant';
   isActive?: boolean;
   email?: string;
 }

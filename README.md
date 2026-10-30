@@ -52,6 +52,14 @@ today, 🚧 = not yet built.
 - ✅ Year-end W-2 — built from each employee's processed stubs (`src/lib/payroll/totals.ts`): box 1 excludes 401(k) and section 125 health, boxes 3/5 exclude health only (box 3 capped at the wage base), box 12 code D, state boxes 15-17 (PA keeps 401(k)). Employees consent to electronic delivery, then download Copies B, C and 2 as a PDF from Pay stubs. Admins see every W-2 with W-3 totals and what's missing (SSN, address) under `/admin/payroll/reports`. Filing Copy A/W-3 with the SSA and the states is done on their own websites.
 - ✅ Payroll reports — monthly, quarterly and yearly payroll registers by pay date (`/admin/payroll/reports`), as PDF or CSV for an auditor: per-employee wages, withholding and deductions, employer FICA and FUTA, Form 941 lines 2-6, federal deposits by month, and state withholding. State unemployment (SUTA) is not included.
 
+**Rentals** (landlord side for portal admins, plus a tenant login)
+- ✅ Rental homes (`/admin/rentals`): each admin sees only the homes they own. Overview of this month's rent collected vs expected, tenants behind on rent, open repairs, and insurance/HOA/tax bills due in 30 days
+- ✅ Leases with Connecticut defaults (9-day grace period before rent is late; deposit cap noted on the form), one active lease per home, "Add a month's rent" for every active lease (never charges twice), payments recorded by hand (Zelle, check, cash...). 🚧 No online payments yet (Stripe is the plan)
+- ✅ Repairs: tenants report them, the landlord is notified, sets a visit time and vendor, and the tenant is notified of the visit and when it's fixed. Cost and private notes stay landlord-only. 🚧 No photo uploads yet
+- ✅ Reminders for insurance renewals, HOA dues and property tax; repeating ones roll forward when marked paid. 🚧 In-app only, no email reminders yet
+- ✅ Tenant login (`/rental`): a `tenant` role invited from the lease (emailed or a link to text). Tenants see only their own home, rent history, repairs and lease, can message only their landlord, and are sent back to `/rental` from any staff page. Requires migration `src/db/migrations/0002_rentals.sql`
+- 🚧 Listings to rental sites, applications and screening, e-signed leases, expense reports, paid landlord plans
+
 **Communication**
 - ✅ Messaging between admin and employees (`/messages`) — live delivery via Supabase Realtime, the one place in the app where RLS is the actual runtime enforcement rather than defense-in-depth (see `supabase/rls-policies.sql`)
 - ✅ In-app notifications (`/notifications`) — wired into a representative set of actions (training assignment, timesheet approve/reject, performance review submission); extend `src/lib/notifications/create.ts`'s call sites to cover more. 🚧 No email delivery yet, in-app only

@@ -80,6 +80,28 @@ const STATUSES: Record<string, Record<string, Entry>> = {
     draft: { label: 'Draft', tone: 'draft' },
     processed: { label: 'Processed', tone: 'live' },
   },
+  rent: {
+    upcoming: { label: 'Not due yet', tone: 'draft' },
+    due: { label: 'Due', tone: 'new' },
+    partial: { label: 'Part paid', tone: 'warning' },
+    late: { label: 'Late', tone: 'danger' },
+    paid: { label: 'Paid', tone: 'live' },
+  },
+  repair: {
+    open: { label: 'Needs scheduling', tone: 'new' },
+    scheduled: { label: 'Visit scheduled', tone: 'info' },
+    done: { label: 'Fixed', tone: 'live' },
+    cancelled: { label: 'Cancelled', tone: 'muted' },
+  },
+  repairUrgency: {
+    low: { label: 'Low', tone: 'muted' },
+    normal: { label: 'Normal', tone: 'draft' },
+    urgent: { label: 'Urgent', tone: 'danger' },
+  },
+  lease: {
+    active: { label: 'Active', tone: 'live' },
+    ended: { label: 'Ended', tone: 'muted' },
+  },
   employee: {
     active: { label: 'Active', tone: 'live' },
     pending: { label: 'Pending start', tone: 'new' },
@@ -137,3 +159,34 @@ export function labelFrom(list: { value: string; label: string }[], value: strin
 export function fullName(first: string | null | undefined, last: string | null | undefined): string {
   return [first, last].filter(Boolean).join(' ') || 'Unnamed employee';
 }
+
+export const REPAIR_STATUSES = Object.entries(STATUSES.repair).map(([value, e]) => ({ value, label: e.label }));
+
+export const REPAIR_URGENCIES = [
+  { value: 'normal', label: 'Normal: in the next few days' },
+  { value: 'urgent', label: 'Urgent: no heat, no water, a leak, unsafe' },
+  { value: 'low', label: 'Low: whenever convenient' },
+];
+
+export const REMINDER_KINDS = [
+  { value: 'insurance', label: 'Insurance' },
+  { value: 'hoa', label: 'HOA dues' },
+  { value: 'tax', label: 'Property tax' },
+  { value: 'other', label: 'Other' },
+];
+
+export const REMINDER_REPEATS = [
+  { value: 'none', label: "Doesn't repeat" },
+  { value: 'monthly', label: 'Every month' },
+  { value: 'quarterly', label: 'Every 3 months' },
+  { value: 'yearly', label: 'Every year' },
+];
+
+export const PAYMENT_METHODS = [
+  { value: 'zelle', label: 'Zelle' },
+  { value: 'bank_transfer', label: 'Bank transfer' },
+  { value: 'check', label: 'Check' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'card', label: 'Card' },
+  { value: 'other', label: 'Other' },
+];
