@@ -80,8 +80,8 @@ const COPIES = [
  */
 export async function renderW2Pdf(w2: W2, employee: W2Party, company: Company): Promise<Uint8Array> {
   const { pdf, bold, writer } = await setup(`Form W-2 ${w2.year}`, company.name);
-  const page = pdf.addPage([612, 792]);
-  const text = writer(page);
+  let page = pdf.addPage([612, 792]);
+  let text = writer(page);
   const L = 30;
   const W = 552;
   const H = 238;
@@ -106,100 +106,110 @@ export async function renderW2Pdf(w2: W2, employee: W2Party, company: Company): 
   };
   const money = (n: number) => (n ? num(n) : '');
 
-  COPIES.forEach(([copy, purpose], i) => {
-    const top = 772 - i * (H + 16);
-    const states = w2.states.length ? w2.states : [{ code: '', wages: 0, tax: 0 }];
-    // Left column: a-f.
-    cell(L, top, 135, 22, "a  Employee's social security number", employee.ssn);
-    cell(L + 135, top, 135, 22, 'OMB No. 1545-0029', '');
-    cell(L, top - 22, 270, 22, 'b  Employer identification number (EIN)', company.ein || 'Not on file');
-    page.drawRectangle({
-      x: L,
-      y: top - 100,
-      width: 270,
-      height: 56,
-      borderColor: RULE,
-      borderWidth: 0.6,
-    });
-    text("c  Employer's name, address, and ZIP code", L + 3, top - 52, {
-      size: 6,
-      color: MUTED,
-    });
-    [company.name, ...lines(company.address)].slice(0, 4).forEach((l, j) =>
-      text(l, L + 4, top - 63 - j * 9.5, {
-        f: j ? undefined : bold,
-        size: 8,
-      }),
-    );
-    cell(L, top - 100, 270, 20, 'd  Control number', employee.controlNumber);
-    page.drawRectangle({
-      x: L,
-      y: top - 176,
-      width: 270,
-      height: 56,
-      borderColor: RULE,
-      borderWidth: 0.6,
-    });
-    text("e  Employee's name    f  Employee's address and ZIP code", L + 3, top - 128, { size: 6, color: MUTED });
-    [employee.name.toUpperCase(), ...lines(employee.address).map((l) => l.toUpperCase())].slice(0, 4).forEach((l, j) =>
-      text(l, L + 4, top - 139 - j * 9.5, {
-        f: j ? undefined : bold,
-        size: 8,
-      }),
-    );
+  // Two states fit on a W-2. For more, each further pair goes on an extra W-2 that repeats only
+  // boxes a-f and the state lines, so federal amounts aren't counted twice (IRS W-2 instructions).
+  const allStates = w2.states.length ? w2.states : [{ code: '', wages: 0, tax: 0 }];
+  for (let form = 0; form * 2 < allStates.length; form++) {
+    if (form > 0) {
+      page = pdf.addPage([612, 792]);
+      text = writer(page);
+    }
+    const states = allStates.slice(form * 2, form * 2 + 2);
+    const fed = (n: number) => (form === 0 ? money(n) : '');
+    COPIES.forEach(([copy, purpose], i) => {
+      const top = 772 - i * (H + 16);
+      // Left column: a-f.
+      cell(L, top, 135, 22, "a  Employee's social security number", employee.ssn);
+      cell(L + 135, top, 135, 22, 'OMB No. 1545-0029', '');
+      cell(L, top - 22, 270, 22, 'b  Employer identification number (EIN)', company.ein || 'Not on file');
+      page.drawRectangle({
+        x: L,
+        y: top - 100,
+        width: 270,
+        height: 56,
+        borderColor: RULE,
+        borderWidth: 0.6,
+      });
+      text("c  Employer's name, address, and ZIP code", L + 3, top - 52, {
+        size: 6,
+        color: MUTED,
+      });
+      [company.name, ...lines(company.address)].slice(0, 4).forEach((l, j) =>
+        text(l, L + 4, top - 63 - j * 9.5, {
+          f: j ? undefined : bold,
+          size: 8,
+        }),
+      );
+      cell(L, top - 100, 270, 20, 'd  Control number', employee.controlNumber);
+      page.drawRectangle({
+        x: L,
+        y: top - 176,
+        width: 270,
+        height: 56,
+        borderColor: RULE,
+        borderWidth: 0.6,
+      });
+      text("e  Employee's name    f  Employee's address and ZIP code", L + 3, top - 128, { size: 6, color: MUTED });
+      [employee.name.toUpperCase(), ...lines(employee.address).map((l) => l.toUpperCase())].slice(0, 4).forEach((l, j) =>
+        text(l, L + 4, top - 139 - j * 9.5, {
+          f: j ? undefined : bold,
+          size: 8,
+        }),
+      );
 
-    // Right columns: boxes 1-14.
-    const cw = (W - 270) / 2;
-    const pairs: [string, string, string, string][] = [
-      ['1  Wages, tips, other compensation', money(w2.box1), '2  Federal income tax withheld', money(w2.box2)],
-      ['3  Social security wages', money(w2.box3), '4  Social security tax withheld', money(w2.box4)],
-      ['5  Medicare wages and tips', money(w2.box5), '6  Medicare tax withheld', money(w2.box6)],
-      ['7  Social security tips', '', '8  Allocated tips', ''],
-      ['9', '', '10  Dependent care benefits', ''],
-      ['11  Nonqualified plans', '', `12a  Code ${w2.box12[0]?.code ?? ''}`, w2.box12[0] ? money(w2.box12[0].amount) : ''],
-      ['13  Retirement plan', w2.box12.some((b) => b.code === 'D') ? 'X' : '', '14  Other', ''],
-    ];
-    pairs.forEach(([l1, v1, l2, v2], j) => {
-      const y = top - j * 22;
-      cell(MID, y, cw, 22, l1, v1, { right: true });
-      cell(MID + cw, y, cw, 22, l2, v2, { right: true });
-    });
-    page.drawRectangle({
-      x: MID,
-      y: top - 176,
-      width: W - 270,
-      height: 22,
-      color: TINT,
-    });
-    text(`Form W-2  Wage and Tax Statement  ${w2.year}`, MID + 6, top - 168, {
-      f: bold,
-      size: 10,
-      color: NAVY,
-    });
+      // Right columns: boxes 1-14.
+      const cw = (W - 270) / 2;
+      const pairs: [string, string, string, string][] = [
+        ['1  Wages, tips, other compensation', fed(w2.box1), '2  Federal income tax withheld', fed(w2.box2)],
+        ['3  Social security wages', fed(w2.box3), '4  Social security tax withheld', fed(w2.box4)],
+        ['5  Medicare wages and tips', fed(w2.box5), '6  Medicare tax withheld', fed(w2.box6)],
+        ['7  Social security tips', '', '8  Allocated tips', ''],
+        ['9', '', '10  Dependent care benefits', ''],
+        ['11  Nonqualified plans', '', `12a  Code ${w2.box12[0]?.code ?? ''}`, w2.box12[0] ? fed(w2.box12[0].amount) : ''],
+        ['13  Retirement plan', form === 0 && w2.box12.some((b) => b.code === 'D') ? 'X' : '', '14  Other', ''],
+      ];
+      pairs.forEach(([l1, v1, l2, v2], j) => {
+        const y = top - j * 22;
+        cell(MID, y, cw, 22, l1, v1, { right: true });
+        cell(MID + cw, y, cw, 22, l2, v2, { right: true });
+      });
+      page.drawRectangle({
+        x: MID,
+        y: top - 176,
+        width: W - 270,
+        height: 22,
+        color: TINT,
+      });
+      text(`Form W-2  Wage and Tax Statement  ${w2.year}`, MID + 6, top - 168, {
+        f: bold,
+        size: 10,
+        color: NAVY,
+      });
 
-    // State and local: boxes 15-20.
-    const sy = top - 176;
-    states.slice(0, 2).forEach((s, j) => {
-      const y = sy - j * 20;
-      cell(L, y, 80, 20, '15  State  Employer ID', s.code ? `${s.code}  ${company.ein}` : '');
-      cell(L + 80, y, 95, 20, '16  State wages, tips, etc.', money(s.wages), {
+      // State and local: boxes 15-20.
+      const sy = top - 176;
+      states.forEach((s, j) => {
+        const y = sy - j * 20;
+        cell(L, y, 80, 20, '15  State  Employer ID', s.code);
+        cell(L + 80, y, 95, 20, '16  State wages, tips, etc.', money(s.wages), {
+          right: true,
+        });
+        cell(L + 175, y, 95, 20, '17  State income tax', money(s.tax), {
+          right: true,
+        });
+        cell(MID, y, 95, 20, '18  Local wages, tips, etc.', form === 0 && j === 0 ? money(w2.localWages) : '', { right: true });
+        cell(MID + 95, y, 95, 20, '19  Local income tax', form === 0 && j === 0 ? money(w2.local) : '', { right: true });
+        cell(MID + 190, y, W - 270 - 190, 20, '20  Locality name', '');
+      });
+      const fy = sy - states.length * 20 - 10;
+      text(`${copy}  ${purpose}`, L, fy, { f: bold, size: 7.5 });
+      text('Department of the Treasury - Internal Revenue Service', L + W, fy, {
+        size: 7,
+        color: MUTED,
         right: true,
       });
-      cell(L + 175, y, 95, 20, '17  State income tax', money(s.tax), {
-        right: true,
-      });
-      cell(MID, y, 95, 20, '18  Local wages, tips, etc.', j === 0 && w2.local ? money(w2.box1) : '', { right: true });
-      cell(MID + 95, y, 95, 20, '19  Local income tax', j === 0 ? money(w2.local) : '', { right: true });
-      cell(MID + 190, y, W - 270 - 190, 20, '20  Locality name', '');
     });
-    const fy = sy - Math.min(states.length, 2) * 20 - 10;
-    text(`${copy}  ${purpose}`, L, fy, { f: bold, size: 7.5 });
-    text('Department of the Treasury - Internal Revenue Service', L + W, fy, {
-      size: 7,
-      color: MUTED,
-      right: true,
-    });
-  });
+  }
   return pdf.save();
 }
 

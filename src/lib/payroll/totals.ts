@@ -44,7 +44,7 @@ export function figuresOf(d: StubDetail, fallbackState: string | null): StubFigu
   const health = ded((l) => l.preTax && !/401/.test(l.label));
   const otherDeductions = ded((l) => !l.preTax);
   const stateLine = d.taxes.find((t) => t.code === 'state');
-  const stateCode = stateLine?.label.match(/^([A-Z]{2}) /)?.[1] ?? fallbackState;
+  const stateCode = d.stateCode ?? stateLine?.label.match(/^([A-Z]{2}) /)?.[1] ?? fallbackState;
   const f = {
     federal: tax('federal'),
     socialSecurity: tax('social_security'),
@@ -107,6 +107,7 @@ export interface W2 {
   box6: number; // medicare tax withheld
   box12: { code: string; amount: number }[];
   states: { code: string; wages: number; tax: number }[]; // boxes 15-17
+  localWages: number; // box 18: income-tax wages on stubs that withheld local tax
   local: number; // box 19
   stubs: number;
 }
@@ -139,6 +140,7 @@ export function buildW2(year: number, figures: StubFigures[]): W2 {
     box6: total('medicare'),
     box12: retirement > 0 ? [{ code: 'D', amount: retirement }] : [],
     states: [...states.values()].filter((s) => s.wages > 0 || s.tax > 0),
+    localWages: cents(figures.filter((f) => f.local > 0).reduce((s, f) => s + f.gross - f.retirement - f.health, 0)),
     local: total('local'),
     stubs: figures.length,
   };
