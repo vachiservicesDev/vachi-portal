@@ -1,13 +1,13 @@
 import { z } from 'zod';
+import { STATE_RULES } from './states/rules';
 
 /**
  * Federal income tax withholding from a 2020-or-later Form W-4, using the IRS Publication 15-T
  * annual percentage method. The 2026 figures below come from IRS Rev. Proc. 2025-32 (standard
  * deduction and brackets). Check them against the current Publication 15-T each January.
  *
- * State withholding differs in every state, so it is set up per employee: states with no wage
- * income tax withhold nothing, and for the rest HR records a percent or fixed amount from the
- * employee's state withholding form.
+ * State withholding uses each state's own 2026 formula (states/rules.ts) with the answers from the
+ * employee's state certificate; the nine states without a wage tax withhold nothing.
  */
 
 export const TAX_YEAR = 2026;
@@ -53,8 +53,21 @@ export const w4Schema = z.object({
 });
 export type W4 = z.infer<typeof w4Schema>;
 
+const count = z.coerce.number().int('Use a whole number.').nonnegative('Can’t be negative.').max(99);
+
+/**
+ * The employee's state withholding certificate. `formula` (the default) applies the state's own
+ * 2026 formula (see states/rules.ts) to these answers; `percent` and `amount` are overrides for
+ * cases the formula doesn't cover, like an agreed flat amount.
+ */
 export const stateWithholdingSchema = z.object({
-  mode: z.enum(['none', 'percent', 'amount']).default('none'),
+  mode: z.enum(['formula', 'percent', 'amount', 'none']).default('formula'),
+  status: z.string().trim().max(20).optional(),
+  allowances: count.optional(),
+  dependents: count.optional(),
+  amount: z.coerce.number().nonnegative('Can’t be negative.').max(100_000).optional(),
+  locality: z.string().trim().max(40).optional(),
+  exempt: z.boolean().default(false),
   value: z.coerce.number().nonnegative('Can’t be negative.').max(100_000).default(0),
   extra: z.coerce.number().nonnegative('Can’t be negative.').max(100_000).default(0),
 });
@@ -94,12 +107,55 @@ export function federalWithholding(wages: number, frequency: PayFrequency, w4: W
   return round(annualTax / periods + w4.extraWithholding);
 }
 
-/** State income tax to withhold this pay period, from the employee's state setup. */
-export function stateWithholding(wages: number, state: string | null | undefined, setup: StateWithholding | undefined): number | null {
-  if (state && NO_WAGE_TAX_STATES.includes(state)) return 0;
-  if (!setup || setup.mode === 'none') return null; // not set up: HR enters it
-  const base = setup.mode === 'percent' ? (wages * setup.value) / 100 : setup.value;
-  return round(Math.max(0, base) + setup.extra);
+/** The state filing status to use when the employee hasn't chosen one: mapped from the federal W-4. */
+export function defaultStateStatus(state: string, federal?: W4): string | undefined {
+  const statuses = STATE_RULES[state]?.statuses;
+  if (!statuses) return undefined;
+  const fs = federal?.filingStatus;
+  const want = fs === 'married_jointly' ? ['married', 'M', 'married_joint', 'C', 'B'] : fs === 'head_of_household' ? ['hoh', 'H', 'B', 'single', 'S'] : ['single', 'S', 'F', 'A', 'other', 'standard', 'one'];
+  return want.find((k) => k in statuses) ?? Object.keys(statuses)[0];
+}
+
+export interface StateTaxInput {
+  /** This period's wages after pre-tax deductions (the state taxable wages). */
+  wages: number;
+  /** Gross less section 125 only, for states that tax 401(k) deferrals (Pennsylvania). */
+  wagesWith401k?: number;
+  frequency: PayFrequency;
+  /** Federal income tax withheld this period. */
+  federalTax: number;
+  ficaYtd?: number;
+}
+
+/**
+ * State income tax to withhold this pay period. 0 in states without a wage tax; null when the state
+ * isn't covered (HR enters the figure).
+ */
+export function stateWithholding(state: string | null | undefined, setup: TaxSetup, input: StateTaxInput): number | null {
+  if (!state) return null;
+  if (NO_WAGE_TAX_STATES.includes(state)) return 0;
+  const s = setup.state ?? stateWithholdingSchema.parse({});
+  if (s.mode === 'none') return null;
+  if (s.exempt) return round(s.extra);
+  if (s.mode === 'percent') return round((input.wages * s.value) / 100 + s.extra);
+  if (s.mode === 'amount') return round(s.value + s.extra);
+  const rule = STATE_RULES[state];
+  if (!rule) return null;
+  const periods = PAY_FREQUENCIES[input.frequency];
+  const wages = state === 'PA' ? (input.wagesWith401k ?? input.wages) : input.wages;
+  if (wages <= 0) return round(s.extra);
+  const form = { ...s, status: s.status || defaultStateStatus(state, setup.federal) };
+  const annual = rule.annualTax(wages * periods, form, {
+    periods,
+    federalAnnual: input.federalTax * periods,
+    federal: setup.federal,
+    periodWages: wages,
+    ficaYtd: input.ficaYtd ?? 0,
+  });
+  let perPeriod = Math.max(0, annual) / periods;
+  if (rule.roundPeriod === 'dollar') perPeriod = Math.round(perPeriod);
+  else if (rule.roundPeriod === 'up') perPeriod = Math.ceil(perPeriod);
+  return round(perPeriod + s.extra);
 }
 
 /** Pay frequency from the length of a pay period, when the employee has none set. */

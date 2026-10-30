@@ -29,10 +29,17 @@ export function computeTaxes(c: TaxContext): TaxResult {
   const incomeWages = Math.max(0, c.gross - c.healthInsurance - c.retirement);
   const ssRoom = Math.max(0, SOCIAL_SECURITY_WAGE_BASE - c.ficaWagesYtd);
   const overThreshold = Math.max(0, c.ficaWagesYtd + ficaWages - Math.max(ADDITIONAL_MEDICARE_THRESHOLD, c.ficaWagesYtd));
+  const federalTax = c.setup.federal ? federalWithholding(incomeWages, c.frequency, c.setup.federal) : null;
   return {
-    federalTax: c.setup.federal ? federalWithholding(incomeWages, c.frequency, c.setup.federal) : null,
+    federalTax,
     socialSecurity: round(Math.min(ficaWages, ssRoom) * SOCIAL_SECURITY_RATE),
     medicare: round(ficaWages * MEDICARE_RATE + overThreshold * ADDITIONAL_MEDICARE_RATE),
-    stateTax: stateWithholding(incomeWages, c.workState, c.setup.state),
+    stateTax: stateWithholding(c.workState, c.setup, {
+      wages: incomeWages,
+      wagesWith401k: ficaWages,
+      frequency: c.frequency,
+      federalTax: federalTax ?? 0,
+      ficaYtd: c.ficaWagesYtd,
+    }),
   };
 }

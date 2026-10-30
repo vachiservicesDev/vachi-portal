@@ -5,6 +5,7 @@ import { employees, payRuns, payStubs, timesheetEntries, timesheets } from '@/db
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 import { detailOf } from '@/lib/payroll/stub';
 import { taxSetupOf } from '@/lib/payroll/setup';
+import { STATE_RULES } from '@/lib/payroll/states/rules';
 import { PAY_FREQUENCIES, frequencyFromPeriod, type PayFrequency } from '@/lib/payroll/w4';
 import { and, desc, eq, gte, lte, ne } from 'drizzle-orm';
 
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       !employee.payType && 'pay type and rate',
       !taxSetupOf(employee.w4).federal && 'federal W-4',
       !employee.workState && 'work state',
+      employee.workState && STATE_RULES[employee.workState] && !taxSetupOf(employee.w4).state && `${STATE_RULES[employee.workState].form} state withholding form`,
       !employee.address && 'mailing address',
     ].filter(Boolean),
   });
