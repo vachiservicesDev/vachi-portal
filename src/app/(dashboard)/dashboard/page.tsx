@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { i9Records, onboardingSessions, payRuns, payStubs, timesheets, trainingAssignments, trainingTasks } from '@/db/schema';
 import { requireSession } from '@/lib/auth/session';
 import { statusOf } from '@/lib/status';
+import type { TaxSetup } from '@/lib/payroll/w4';
 import { Check } from '@/components/ui/Check';
 import { Chip, EmptyState, PageHeader, Panel, TextLink, When, formatMoney } from '@/components/ui/ui';
 
@@ -45,7 +46,7 @@ export default async function EmployeeHomePage() {
       .select({ netPay: payStubs.netPay, payDate: payRuns.payDate })
       .from(payStubs)
       .innerJoin(payRuns, eq(payRuns.id, payStubs.payRunId))
-      .where(eq(payStubs.employeeId, employee.id))
+      .where(and(eq(payStubs.employeeId, employee.id), eq(payRuns.status, 'processed')))
       .orderBy(desc(payRuns.payDate))
       .limit(1),
   ]);
@@ -69,6 +70,13 @@ export default async function EmployeeHomePage() {
       detail: i9Record.status === 'section1_pending' ? 'Required by your first day of work.' : 'Submitted. HR completes Section 2.',
     });
   }
+  const federalW4 = (employee.w4 as TaxSetup | null)?.federal;
+  steps.push({
+    title: 'Fill in your tax forms (W-4 and state)',
+    done: Boolean(federalW4?.submittedAt),
+    href: '/onboarding#tax-forms',
+    detail: federalW4?.submittedAt ? 'On file. Update them any time your situation changes.' : 'Needed before your first paycheck.',
+  });
   const remaining = steps.filter((s) => !s.done).length;
 
   return (

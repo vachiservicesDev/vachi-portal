@@ -15,7 +15,7 @@ export async function GET() {
   if (!gate.ok) return NextResponse.json({ message: gate.message }, { status: gate.status });
   const [e] = await db.select().from(employees).where(ownEmployee(gate.profile)).limit(1);
   if (!e) return NextResponse.json({ message: 'No employee record is linked to this login yet. Ask HR.' }, { status: 404 });
-  return NextResponse.json({ workState: e.workState, w4: taxSetupOf(e.w4) });
+  return NextResponse.json({ workState: e.workState, name: `${e.firstName} ${e.lastName}`, w4: taxSetupOf(e.w4) });
 }
 
 export async function PUT(request: NextRequest) {
@@ -27,9 +27,12 @@ export async function PUT(request: NextRequest) {
   const body = employeeFormsSchema.safeParse(await request.json().catch(() => null));
   if (!body.success) return NextResponse.json({ message: 'Invalid input', errors: body.error.flatten() }, { status: 400 });
   const before = taxSetupOf(e.w4);
+  const { federal, state, ssnLast4, signedName } = body.data;
   const w4 = {
-    federal: { ...body.data.federal, submittedAt: new Date().toISOString(), submittedBy: 'employee' as const },
-    state: body.data.state ?? before.state,
+    ...before,
+    federal: { ...federal, submittedAt: new Date().toISOString(), submittedBy: 'employee' as const, signedName },
+    state: state ?? before.state,
+    ssnLast4,
   };
   await db.update(employees).set({ w4, updatedAt: new Date() }).where(eq(employees.id, e.id));
 

@@ -5,48 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { TextAreaField, TextField } from '@/components/ui/fields';
 import { FormStatus } from '@/components/ui/forms';
 import { Alert, Loading, PageHeader, Panel } from '@/components/ui/ui';
-import { W4Fields, readW4 } from '@/components/payroll/W4Fields';
-import type { TaxSetup } from '@/lib/payroll/w4';
-
-/** The employee fills in their own W-4, as on the paper form. HR is notified. */
-function W4Panel() {
-  const { data, error, reload } = useResource<{ workState: string | null; w4: TaxSetup }>('/api/me/w4');
-  const action = useAction();
-
-  async function save(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const result = await action.run('w4', '/api/me/w4', { method: 'PUT', body: readW4(new FormData(e.currentTarget)) }, 'Saved. HR has been told, and your next pay stub uses it.');
-    if (result.ok) await reload();
-  }
-
-  if (error) return <Alert title="Couldn't load your W-4">{error}</Alert>;
-  if (!data) return null;
-  const submitted = data.w4.federal?.submittedAt;
-  return (
-    <Panel
-      title="Tax withholding (Form W-4)"
-      description={
-        <>
-          Copy your answers from the{' '}
-          <a className="link" href="https://www.irs.gov/pub/irs-pdf/fw4.pdf" target="_blank" rel="noreferrer">
-            IRS Form W-4
-          </a>
-          . The IRS Tax Withholding Estimator can help you fill it in.{submitted ? ` Last updated ${new Date(submitted).toLocaleDateString('en-US')}.` : ''}
-        </>
-      }
-    >
-      <form onSubmit={save} noValidate className="grid gap-6">
-        <FormStatus error={action.error} success={action.success} fieldErrors={action.fieldErrors} labels={{ federal: 'Federal W-4', state: 'State withholding' }} />
-        <W4Fields setup={data.w4} workState={data.workState} errors={action.fieldErrors} />
-        <div>
-          <Button type="submit" busy={action.busy === 'w4'} busyLabel="Saving">
-            Save W-4
-          </Button>
-        </div>
-      </form>
-    </Panel>
-  );
-}
+import { W4Panel } from '@/components/payroll/W4Panel';
 
 interface Me {
   firstName: string;

@@ -186,10 +186,13 @@ describe('pay stubs end to end', () => {
     setCurrentUser(profile!.id);
     expect((await savePay(put({ payType: 'hourly', payRate: 99, payFrequency: 'weekly', workState: 'TX' }), { params: { id: employee.id } })).status).toBe(403);
 
-    const res = await saveMyW4(put({ federal: { filingStatus: 'head_of_household', dependentsAmount: 2000 } }));
+    // Unsigned forms are refused: the W-4 needs the perjury statement and a typed name.
+    expect((await saveMyW4(put({ federal: { filingStatus: 'head_of_household' }, ssnLast4: '1234', signedName: 'Pat Lee' }))).status).toBe(400);
+    const res = await saveMyW4(put({ federal: { filingStatus: 'head_of_household', dependentsAmount: 2000 }, ssnLast4: '1234', signedName: 'Pat Lee', perjury: true }));
     expect(res.status).toBe(200);
     const mine = await (await getMyW4()).json();
-    expect(mine.w4.federal).toMatchObject({ filingStatus: 'head_of_household', dependentsAmount: 2000, submittedBy: 'employee' });
+    expect(mine.w4.federal).toMatchObject({ filingStatus: 'head_of_household', dependentsAmount: 2000, submittedBy: 'employee', signedName: 'Pat Lee' });
+    expect(mine.w4.ssnLast4).toBe('1234');
     const sent = await db.select().from(notifications).where(eq(notifications.userId, adminId));
     expect(sent.map((n) => n.type)).toContain('w4_submitted');
   });

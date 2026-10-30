@@ -75,8 +75,13 @@ export type StateWithholding = z.infer<typeof stateWithholdingSchema>;
 
 /** What employees.w4 holds. */
 export interface TaxSetup {
-  federal?: W4 & { submittedAt?: string; submittedBy?: 'employee' | 'hr' };
+  /** signedName: the employee's typed signature under the W-4's penalties-of-perjury statement. */
+  federal?: W4 & { submittedAt?: string; submittedBy?: 'employee' | 'hr'; signedName?: string };
   state?: StateWithholding;
+  /** Last four digits of the SSN, for the truncated SSN on employee W-2 copies. Never the full number. */
+  ssnLast4?: string;
+  /** When the employee agreed to get their W-2 electronically (required before an electronic W-2). */
+  w2ConsentAt?: string;
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;

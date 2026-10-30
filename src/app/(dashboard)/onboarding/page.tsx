@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { CheckboxField, TextField } from '@/components/ui/fields';
 import { FormStatus } from '@/components/ui/forms';
 import { Alert, Chip, EmptyState, Loading, PageHeader, Panel, When } from '@/components/ui/ui';
+import { W4Panel } from '@/components/payroll/W4Panel';
 
 interface OnboardingDocument {
   id: string;
@@ -79,7 +80,7 @@ export default function EmployeeOnboardingPage() {
       <PageHeader
         eyebrow="Getting started"
         title="Onboarding"
-        lead="Your welcome paperwork. When HR sends you a document, read it here and sign it by typing your name."
+        lead="Your welcome paperwork. Sign each document HR sends by typing your name, and fill in your tax forms before your first paycheck."
         actions={st && <Chip tone={st.tone}>{st.label}</Chip>}
       />
       {error && <Alert title="Couldn't load your onboarding">{error}</Alert>}
@@ -121,6 +122,9 @@ export default function EmployeeOnboardingPage() {
           </ul>
         </Panel>
       )}
+      <div className="mt-6">
+        <W4Panel id="tax-forms" />
+      </div>
     </>
   );
 }

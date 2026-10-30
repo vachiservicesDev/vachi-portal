@@ -19,8 +19,17 @@ export const paySetupSchema = z
     if (v.payType === 'salary' && !v.annualSalary) ctx.addIssue({ code: 'custom', path: ['annualSalary'], message: 'Enter the yearly salary.' });
   });
 
-/** What an employee can fill in themselves: their own federal W-4 and state withholding form. */
-export const employeeFormsSchema = z.object({ federal: w4Schema, state: stateWithholdingSchema.optional() });
+/**
+ * What an employee fills in themselves: their federal W-4 and state withholding form, signed by
+ * typing their name under the W-4's penalties-of-perjury statement.
+ */
+export const employeeFormsSchema = z.object({
+  federal: w4Schema,
+  state: stateWithholdingSchema.optional(),
+  ssnLast4: z.string().trim().regex(/^\d{4}$/, 'Enter the last 4 digits of your Social Security number.'),
+  signedName: z.string().trim().min(2, 'Type your full name to sign.').max(120),
+  perjury: z.literal(true, { errorMap: () => ({ message: 'Confirm the statement to sign the W-4.' }) }),
+});
 
 export function taxSetupOf(stored: unknown): TaxSetup {
   return (stored && typeof stored === 'object' ? stored : {}) as TaxSetup;
