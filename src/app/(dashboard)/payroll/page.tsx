@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useResource } from '@/lib/client/api';
 import { Button } from '@/components/ui/Button';
 import { StatementView } from '@/components/payroll/StatementView';
+import { W2Section } from '@/components/payroll/W2Section';
 import { Alert, DataTable, DateRange, EmptyState, Loading, PageHeader, When, formatMoney } from '@/components/ui/ui';
 
 interface Stub {
@@ -24,7 +25,7 @@ export default function PayrollPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Work and pay" title="Pay stubs" lead="Your earnings statements, newest first, with year-to-date totals. View one to see every line, or download it as a PDF. If something looks wrong, message HR." />
+      <PageHeader eyebrow="Work and pay" title="Pay stubs" lead="Your earnings statements, newest first, with year-to-date totals, and your yearly W-2. View a stub to see every line, or download it as a PDF. If something looks wrong, message HR." />
       {error && <Alert title="Couldn't load your pay stubs">{error}</Alert>}
       {loading && !data ? (
         <Loading />
@@ -68,6 +69,7 @@ export default function PayrollPage() {
             ]}
           />
           {open && <StatementView key={open} stubId={open} />}
+          <W2Section />
         </div>
       )}
     </>

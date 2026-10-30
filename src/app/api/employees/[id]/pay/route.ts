@@ -19,6 +19,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   const d = body.data;
   const before = taxSetupOf(employee.w4);
   const w4 = {
+    ...before,
     federal: d.federal ? { ...d.federal, submittedAt: new Date().toISOString(), submittedBy: 'hr' as const } : before.federal,
     state: d.state ?? before.state,
   };

@@ -35,6 +35,7 @@ function adminNav(unread: number): NavGroup[] {
       items: [
         { href: '/admin/timesheets', label: 'Timesheets' },
         { href: '/admin/payroll', label: 'Payroll' },
+        { href: '/admin/payroll/reports', label: 'Payroll reports and W-2s' },
         { href: '/admin/company', label: 'Company details' },
         { href: '/admin/training', label: 'Training' },
         { href: '/admin/training/summaries', label: 'Weekly summaries' },
